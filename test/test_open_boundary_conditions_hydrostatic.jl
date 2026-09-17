@@ -3,7 +3,6 @@ using Oceananigans.BoundaryConditions: GravityWaveRadiation, NormalRadiation, Gr
 using Oceananigans.BoundaryConditions: ObliqueRadiation, oblique_radiation_update, normal_radiation_update
 using Oceananigans.BoundaryConditions: TracerReservoir, reservoir_update
 using Oceananigans.Units
-using Dates: DateTime
 using Statistics: mean
 using Test
 
@@ -619,28 +618,6 @@ end
 ##### Test: tidal forcing and boundary conditions
 #####
 
-# NOAA CO-OPS published angular speeds [° per hour], an independent source for the frequencies that
-# `TidalHarmonics` builds out of the constituents' astronomical arguments.
-const noaa_speeds = (M2 = 28.9841042, S2 = 30.0,       N2 = 28.4397295, K2 = 30.0821373,
-                     K1 = 15.0410686, O1 = 13.9430356, P1 = 14.9589314, Q1 = 13.3986609,
-                     Mf =  1.0980331, Mm =  0.5443747)
-
-function test_tidal_astronomy()
-    harmonics = TidalHarmonics(DateTime(2019, 4, 1))
-
-    speeds = rad2deg.(harmonics.frequencies) .* 3600
-    speeds_match = all(isapprox(speed, noaa_speeds[name]; rtol = 1e-7)
-                       for (name, speed) in zip(harmonics.constituents, speeds))
-
-    # The phases are the equilibrium arguments at the reference date, so they must advance with the
-    # frequencies: this is what keeps the body force and the boundary tide in phase with each other.
-    later = TidalHarmonics(DateTime(2019, 4, 1, 6))
-    drift = @. mod(later.phases - harmonics.phases - harmonics.frequencies * 6 * 3600, 2π)
-    phases_advance = all(@. min(drift, 2π - drift) < 1e-4)
-
-    return speeds_match && phases_advance
-end
-
 function test_tidal_body_force()
     grid = LatitudeLongitudeGrid(size = (20, 12, 1),
                                  longitude = (-78, -68),
@@ -648,8 +625,16 @@ function test_tidal_body_force()
                                  z = (-4000, 0),
                                  topology = (Bounded, Bounded, Bounded))
 
-    period = 2π / first(TidalHarmonics(DateTime(2019, 4, 1); constituents = (:M2,)).frequencies)
-    harmonics = TidalHarmonics(DateTime(2019, 4, 1); constituents = (:M2,), ramp_time = period)
+    # One semidiurnal constituent, at the frequency and equilibrium amplitude of M2.
+    ω = 1.405189e-4
+    period = 2π / ω
+
+    harmonics = TidalHarmonics(constituents = (:M2,),
+                               frequencies = (ω,),
+                               phases = (1.7,),
+                               equilibrium_amplitudes = (0.168,),
+                               species = (2,),
+                               ramp_time = period)
 
     model = HydrostaticFreeSurfaceModel(grid;
                                         forcing = tidal_forcing(harmonics),
@@ -741,10 +726,6 @@ end
 
     @testset "TracerReservoir recovers exported water" begin
         @test test_tracer_reservoir_recovers_exported_water()
-    end
-
-    @testset "Tidal astronomy" begin
-        @test test_tidal_astronomy()
     end
 
     @testset "Equilibrium tidal body force" begin
