@@ -34,7 +34,7 @@ TracerReservoir{Float64}
 └── outflow_length_scale: 0.0
 ```
 """
-struct TracerReservoir{FT, S}
+struct TracerReservoir{FT, S} <: AbstractRadiationScheme{FT}
     inflow_length_scale  :: FT
     outflow_length_scale :: FT
     cʳ  :: S  # anchor reservoir value (2D array or nothing)
@@ -74,30 +74,11 @@ const TRVBC = BoundaryCondition{<:Value{<:TracerReservoir}}
 ##### Storage allocation during BC regularization
 #####
 
-function materialize_radiation_storage(reservoir::TracerReservoir, grid, loc, dim)
-    FT = eltype(grid)
-    Sx, Sy, Sz = size(grid, loc)
-    arch = architecture(grid)
+radiation_buffers(reservoir::TracerReservoir, arch, FT, tangential_size) =
+    ntuple(_ -> zeros(arch, FT, tangential_size...), 2) # cʳ, cʳˡ
 
-    tangential_size = dim == 1 ? (Sy, Sz) :
-                      dim == 2 ? (Sx, Sz) :
-                                 (Sx, Sy)
-
-    cʳ  = on_architecture(arch, zeros(FT, tangential_size...))
-    cʳˡ = on_architecture(arch, zeros(FT, tangential_size...))
-
-    return TracerReservoir(reservoir.inflow_length_scale,
-                           reservoir.outflow_length_scale,
-                           cʳ, cʳˡ)
-end
-
-function regularize_boundary_condition(bc::TRVBC, grid, loc, dim, args...)
-    regularized_condition = regularize_boundary_condition(bc.condition, grid, loc, dim, args...)
-    reservoir = bc.classification.scheme
-    materialized_reservoir = materialize_radiation_storage(reservoir, grid, loc, dim)
-    classification = rebuild_classification(bc.classification, materialized_reservoir)
-    return BoundaryCondition(classification, regularized_condition)
-end
+radiation_storage(reservoir::TracerReservoir, (cʳ, cʳˡ)) =
+    TracerReservoir(reservoir.inflow_length_scale, reservoir.outflow_length_scale, cʳ, cʳˡ)
 
 #####
 ##### The reservoir update
@@ -111,9 +92,8 @@ end
     return ifelse(L == 0, c★, (cʳ + a * c★) / (1 + a))
 end
 
-# The reservoir is advanced once per time step from an anchor: an anchored fill (stage ≤ 1)
-# promotes the latest value to the anchor, and later stages re-step from it. The first fill
-# (Δt = Inf) starts the reservoir at the exterior value.
+# `cʳ` anchors the reservoir at the start of the time step; every stage relaxes from it with
+# its own `Δt` into `cʳˡ`, which becomes next step's anchor.
 @inline function reservoir_halo!(cᵇ, cᴵ, l, m, grid, c, bc, uₙ, outflow, closed, clock, model_fields)
     Δτ = stage_Δt(clock)
     first_call = isinf(Δτ)

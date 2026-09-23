@@ -47,7 +47,8 @@ in `outputs` to a JLD2 file.
 The argument `outputs` may be a `Dict` or `NamedTuple`. The keys of `outputs` are symbols or
 strings that "name" output data. The values of `outputs` are either `AbstractField`s, objects that
 are called with the signature `output(model)`, or `WindowedTimeAverage`s of `AbstractFields`s,
-functions, or callable objects.
+functions, or callable objects. A `TimeDerivative` of a `Field`, `AbstractOperation`, or
+`Reduction` may also be used.
 
 Keyword arguments
 =================
@@ -393,7 +394,7 @@ function Oceananigans.write_output!(writer::JLD2Writer, model)
         verbose && @info "Writing JLD2 output $(keys(writer.outputs)) to $(writer.filepath)..."
 
         start_time, old_filesize = time_ns(), filesize(writer.filepath)
-        jld2output!(writer.filepath, model.clock.iteration, model.clock.time, data, writer.jld2_kw)
+        jld2output!(writer.filepath, model.clock.iteration, output_time(model.clock, writer.schedule), data, writer.jld2_kw)
         end_time, new_filesize = time_ns(), filesize(writer.filepath)
 
         verbose && @info @sprintf("Writing done: time=%s, size=%s, Δsize=%s",
