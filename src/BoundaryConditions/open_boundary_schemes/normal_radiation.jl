@@ -62,13 +62,14 @@ NormalRadiation{Float64}
 └── target_transport: Nothing
 ```
 """
-struct NormalRadiation{FT, S, TF} <: AbstractRadiationScheme{FT}
+struct NormalRadiation{FT, S, A, TF} <: AbstractRadiationScheme{FT}
     outflow_timescale :: FT
     inflow_timescale  :: FT
     use_boundary_velocity :: Bool # advect Value fields with the boundary-face velocity instead of one cell in
     φᵇ  :: S  # anchor boundary value (2D array or nothing)
     φ₁  :: S  # anchor interior value (2D array or nothing)
     φ₁ˡ :: S  # latest interior value (2D array or nothing)
+    anchors :: A # iteration of the last anchored fill at each boundary point (2D array or nothing)
     target_transport :: TF # prescribed net transport through the boundary, or nothing
 end
 
@@ -81,7 +82,7 @@ function NormalRadiation(FT = defaults.FloatType;
     outflow_timescale = convert(FT, outflow_timescale)
     inflow_timescale = convert(FT, inflow_timescale)
     target_transport = convert_target_transport(FT, target_transport)
-    return NormalRadiation(outflow_timescale, inflow_timescale, use_boundary_velocity, nothing, nothing, nothing, target_transport)
+    return NormalRadiation(outflow_timescale, inflow_timescale, use_boundary_velocity, nothing, nothing, nothing, nothing, target_transport)
 end
 
 Adapt.adapt_structure(to, r::NormalRadiation) =
@@ -91,6 +92,7 @@ Adapt.adapt_structure(to, r::NormalRadiation) =
               adapt(to, r.φᵇ),
               adapt(to, r.φ₁),
               adapt(to, r.φ₁ˡ),
+              adapt(to, r.anchors),
               adapt(to, r.target_transport))
 
 Base.summary(r::AbstractRadiationScheme{FT}) where FT = string(nameof(typeof(r)), "{$FT}")
@@ -103,7 +105,7 @@ function Base.show(io::IO, r::AbstractRadiationScheme)
     print(io, "└── target_transport: ", prettysummary(r.target_transport))
 end
 
-has_target_transport(::NormalRadiation{<:Any, <:Any, <:Nothing}) = false
+has_target_transport(::NormalRadiation{<:Any, <:Any, <:Any, <:Nothing}) = false
 has_target_transport(::NormalRadiation) = true
 
 get_target_transport(scheme::AbstractRadiationScheme, grid) = _eval_tt(scheme.target_transport, grid)
@@ -131,18 +133,21 @@ function materialize_radiation_storage(radiation::AbstractRadiationScheme, grid,
     return radiation_storage(radiation, buffers)
 end
 
+anchor_buffer(arch, tangential_size) = fill!(zeros(arch, Int, tangential_size...), -1)
+
 radiation_buffers(radiation::AbstractRadiationScheme, arch, FT, tangential_size) =
-    ntuple(_ -> zeros(arch, FT, tangential_size...), 3) # φᵇ, φ₁, φ₁ˡ
+    (ntuple(_ -> zeros(arch, FT, tangential_size...), 3)..., anchor_buffer(arch, tangential_size)) # φᵇ, φ₁, φ₁ˡ, anchors
 
-radiation_storage(radiation::AbstractRadiationScheme, (φᵇ, φ₁, φ₁ˡ)) =
+radiation_storage(radiation::AbstractRadiationScheme, (φᵇ, φ₁, φ₁ˡ, anchors)) =
     getnamewrapper(radiation)(radiation.outflow_timescale, radiation.inflow_timescale,
-                              radiation.use_boundary_velocity, φᵇ, φ₁, φ₁ˡ)
+                              radiation.use_boundary_velocity, φᵇ, φ₁, φ₁ˡ, anchors)
 
-radiation_storage(radiation::NormalRadiation, (φᵇ, φ₁, φ₁ˡ)) =
+radiation_storage(radiation::NormalRadiation, (φᵇ, φ₁, φ₁ˡ, anchors)) =
     NormalRadiation(radiation.outflow_timescale, radiation.inflow_timescale, radiation.use_boundary_velocity,
-                    φᵇ, φ₁, φ₁ˡ, radiation.target_transport)
+                    φᵇ, φ₁, φ₁ˡ, anchors, radiation.target_transport)
 
-radiation_arrays(radiation::NormalRadiation) = (; φᵇ = radiation.φᵇ, φ₁ = radiation.φ₁, φ₁ˡ = radiation.φ₁ˡ)
+radiation_arrays(radiation::NormalRadiation) =
+    (; φᵇ = radiation.φᵇ, φ₁ = radiation.φ₁, φ₁ˡ = radiation.φ₁ˡ, anchors = radiation.anchors)
 
 boundary_state(radiation::AbstractRadiationScheme) = map(a -> on_architecture(CPU(), a), radiation_arrays(radiation))
 
@@ -198,8 +203,8 @@ end
     Δτ = stage_Δt(clock)
     first_call = isinf(Δτ)
     Δt = ifelse(first_call, zero(Δτ), Δτ)
-    anchored = anchored_fill(clock)
     radiation = bc.classification.scheme
+    anchored = anchored_fill(clock, radiation.anchors, j, k)
     ℓx, ℓy, ℓz = loc
 
     @inbounds begin
@@ -221,6 +226,7 @@ end
         radiation.φᵇ[j, k]  = φᵇⁿ   # anchor old values for sub-stages
         radiation.φ₁[j, k]  = φ₁ⁿ
         radiation.φ₁ˡ[j, k] = φ₁ⁿ⁺¹ # latest interior, promoted at next anchored fill
+        record_anchor!(radiation.anchors, j, k, clock, anchored, first_call)
     end
 
     return nothing
@@ -230,8 +236,8 @@ end
     Δτ = stage_Δt(clock)
     first_call = isinf(Δτ)
     Δt = ifelse(first_call, zero(Δτ), Δτ)
-    anchored = anchored_fill(clock)
     radiation = bc.classification.scheme
+    anchored = anchored_fill(clock, radiation.anchors, j, k)
     ℓx, ℓy, ℓz = loc
 
     @inbounds begin
@@ -253,6 +259,7 @@ end
         radiation.φᵇ[j, k]  = φᵇⁿ   # anchor old values for sub-stages
         radiation.φ₁[j, k]  = φ₁ⁿ
         radiation.φ₁ˡ[j, k] = φ₁ⁿ⁺¹ # latest interior, promoted at next anchored fill
+        record_anchor!(radiation.anchors, j, k, clock, anchored, first_call)
     end
 
     return nothing
@@ -262,8 +269,8 @@ end
     Δτ = stage_Δt(clock)
     first_call = isinf(Δτ)
     Δt = ifelse(first_call, zero(Δτ), Δτ)
-    anchored = anchored_fill(clock)
     radiation = bc.classification.scheme
+    anchored = anchored_fill(clock, radiation.anchors, i, k)
     ℓx, ℓy, ℓz = loc
 
     @inbounds begin
@@ -285,6 +292,7 @@ end
         radiation.φᵇ[i, k]  = φᵇⁿ   # anchor old values for sub-stages
         radiation.φ₁[i, k]  = φ₁ⁿ
         radiation.φ₁ˡ[i, k] = φ₁ⁿ⁺¹ # latest interior, promoted at next anchored fill
+        record_anchor!(radiation.anchors, i, k, clock, anchored, first_call)
     end
 
     return nothing
@@ -294,8 +302,8 @@ end
     Δτ = stage_Δt(clock)
     first_call = isinf(Δτ)
     Δt = ifelse(first_call, zero(Δτ), Δτ)
-    anchored = anchored_fill(clock)
     radiation = bc.classification.scheme
+    anchored = anchored_fill(clock, radiation.anchors, i, k)
     ℓx, ℓy, ℓz = loc
 
     @inbounds begin
@@ -317,6 +325,7 @@ end
         radiation.φᵇ[i, k]  = φᵇⁿ   # anchor old values for sub-stages
         radiation.φ₁[i, k]  = φ₁ⁿ
         radiation.φ₁ˡ[i, k] = φ₁ⁿ⁺¹ # latest interior, promoted at next anchored fill
+        record_anchor!(radiation.anchors, i, k, clock, anchored, first_call)
     end
 
     return nothing
@@ -326,8 +335,8 @@ end
     Δτ = stage_Δt(clock)
     first_call = isinf(Δτ)
     Δt = ifelse(first_call, zero(Δτ), Δτ)
-    anchored = anchored_fill(clock)
     radiation = bc.classification.scheme
+    anchored = anchored_fill(clock, radiation.anchors, i, j)
     ℓx, ℓy, ℓz = loc
 
     @inbounds begin
@@ -349,6 +358,7 @@ end
         radiation.φᵇ[i, j]  = φᵇⁿ   # anchor old values for sub-stages
         radiation.φ₁[i, j]  = φ₁ⁿ
         radiation.φ₁ˡ[i, j] = φ₁ⁿ⁺¹ # latest interior, promoted at next anchored fill
+        record_anchor!(radiation.anchors, i, j, clock, anchored, first_call)
     end
 
     return nothing
@@ -358,8 +368,8 @@ end
     Δτ = stage_Δt(clock)
     first_call = isinf(Δτ)
     Δt = ifelse(first_call, zero(Δτ), Δτ)
-    anchored = anchored_fill(clock)
     radiation = bc.classification.scheme
+    anchored = anchored_fill(clock, radiation.anchors, i, j)
     ℓx, ℓy, ℓz = loc
 
     @inbounds begin
@@ -381,6 +391,7 @@ end
         radiation.φᵇ[i, j]  = φᵇⁿ   # anchor old values for sub-stages
         radiation.φ₁[i, j]  = φ₁ⁿ
         radiation.φ₁ˡ[i, j] = φ₁ⁿ⁺¹ # latest interior, promoted at next anchored fill
+        record_anchor!(radiation.anchors, i, j, clock, anchored, first_call)
     end
 
     return nothing
