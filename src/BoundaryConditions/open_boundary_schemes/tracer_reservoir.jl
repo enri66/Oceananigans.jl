@@ -80,6 +80,8 @@ radiation_buffers(reservoir::TracerReservoir, arch, FT, tangential_size) =
 radiation_storage(reservoir::TracerReservoir, (cʳ, cʳˡ)) =
     TracerReservoir(reservoir.inflow_length_scale, reservoir.outflow_length_scale, cʳ, cʳˡ)
 
+radiation_arrays(reservoir::TracerReservoir) = (; cʳ = reservoir.cʳ, cʳˡ = reservoir.cʳˡ)
+
 #####
 ##### The reservoir update
 #####

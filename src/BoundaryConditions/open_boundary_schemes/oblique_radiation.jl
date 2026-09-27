@@ -130,6 +130,11 @@ radiation_storage(radiation::ObliqueRadiation, (φᵇ, φ₁, φ₁ˡ, previous_
     ObliqueRadiation(radiation.outflow_timescale, radiation.inflow_timescale, radiation.phase_speed_weight,
                      φᵇ, φ₁, φ₁ˡ, previous_boundary, previous_interior, rₙ, rₜ, c, normal_interior, radiation.target_transport)
 
+radiation_arrays(radiation::ObliqueRadiation) =
+    (; φᵇ = radiation.φᵇ, φ₁ = radiation.φ₁, φ₁ˡ = radiation.φ₁ˡ,
+       previous_boundary = radiation.previous_boundary, previous_interior = radiation.previous_interior,
+       rₙ = radiation.rₙ, rₜ = radiation.rₜ, c = radiation.c, normal_interior = radiation.normal_interior)
+
 # Fills read the buffer written during the previous iteration and write the other one.
 @inline written_buffer(clock) = clock.iteration % 2 + 1
 @inline written_buffer(::Nothing) = 1

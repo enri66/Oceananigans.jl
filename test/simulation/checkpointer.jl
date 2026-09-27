@@ -4,6 +4,8 @@ using Glob
 using NCDatasets
 
 using Oceananigans: prognostic_state, restore_prognostic_state!, prognostic_fields
+using Oceananigans.BoundaryConditions: NormalRadiation, ObliqueRadiation, TracerReservoir,
+    GravityWaveRadiationBoundaryCondition
 using Oceananigans.TurbulenceClosures.Smagorinskys: Smagorinsky,
     DirectionallyAveragedDynamicSmagorinsky, LagrangianAveragedDynamicSmagorinsky
 using Oceananigans.Models.ShallowWaterModels: ShallowWaterScalarDiffusivity
@@ -1228,6 +1230,66 @@ function test_checkpoint_continuation_matches_direct(arch, timestepper)
     return nothing
 end
 
+function test_checkpoint_open_boundary_schemes(arch, velocity_scheme, tracer_scheme)
+    Nx, Ny, Nz = 16, 8, 4
+    Δt = 10.0
+
+    function build_model()
+        grid = RectilinearGrid(arch, size=(Nx, Ny, Nz), x=(0, 16000), y=(0, 8000), z=(-100, 0),
+                               topology=(Bounded, Periodic, Bounded))
+
+        u_bcs = FieldBoundaryConditions(east = NormalFlowBoundaryCondition(0; scheme=velocity_scheme),
+                                        west = NormalFlowBoundaryCondition(0; scheme=velocity_scheme))
+
+        b_bcs = FieldBoundaryConditions(east = ValueBoundaryCondition(0.01; scheme=tracer_scheme),
+                                        west = ValueBoundaryCondition(0.01; scheme=tracer_scheme))
+
+        U_bcs = FieldBoundaryConditions(grid, (Face(), Center(), nothing),
+                                        east = GravityWaveRadiationBoundaryCondition((0.0, 0.0)),
+                                        west = GravityWaveRadiationBoundaryCondition((0.0, 0.0)))
+
+        model = HydrostaticFreeSurfaceModel(grid; buoyancy = BuoyancyTracer(), tracers = :b,
+                                            free_surface = SplitExplicitFreeSurface(grid; substeps=10),
+                                            boundary_conditions = (u=u_bcs, b=b_bcs, U=U_bcs))
+
+        set!(model, u = (x, y, z) -> 0.1 * cos(2π * x / 16000), b = (x, y, z) -> 0.005 * (1 + sin(2π * x / 16000)))
+        return model
+    end
+
+    model_A = build_model()
+    simulation_A = Simulation(model_A, Δt=Δt, stop_iteration=10)
+    run!(simulation_A)
+
+    prefix = "open_boundary_test_$(typeof(arch))_$(typeof(velocity_scheme))_$(typeof(tracer_scheme).name.name)"
+
+    model_B = build_model()
+    simulation_B = Simulation(model_B, Δt=Δt, stop_iteration=5)
+    simulation_B.output_writers[:checkpointer] = Checkpointer(model_B, schedule=IterationInterval(5), prefix=prefix)
+    run!(simulation_B)
+
+    model_B_new = build_model()
+    simulation_B_new = Simulation(model_B_new, Δt=Δt, stop_iteration=10)
+    simulation_B_new.output_writers[:checkpointer] = Checkpointer(model_B_new, schedule=IterationInterval(5), prefix=prefix)
+    set!(simulation_B_new; checkpoint=:latest)
+
+    # The schemes carry state along each open boundary, and a checkpoint restores it.
+    @test !isnothing(prognostic_state(model_B.tracers.b).boundary_state)
+    @test !isnothing(prognostic_state(model_B.velocities.u).boundary_state)
+    test_prognostic_state_equality(prognostic_state(model_B_new.tracers.b).boundary_state,
+                                   prognostic_state(model_B.tracers.b).boundary_state)
+
+    run!(simulation_B_new)
+
+    for name in keys(prognostic_fields(model_A))
+        test_prognostic_state_equality(prognostic_state(prognostic_fields(model_B_new)[name]),
+                                       prognostic_state(prognostic_fields(model_A)[name]))
+    end
+
+    rm.(glob("$(prefix)_iteration*.jld2"), force=true)
+
+    return nothing
+end
+
 function test_stateful_schedule_checkpointing(arch, schedule_type)
     N = 8
     L = 1
@@ -2384,6 +2446,16 @@ for arch in archs
         @testset "Checkpoint continuation [$(typeof(arch)), $timestepper]" begin
             @info "  Testing checkpoint continuation consistency [$(typeof(arch)), $timestepper]..."
             test_checkpoint_continuation_matches_direct(arch, timestepper)
+        end
+    end
+
+    for (velocity_scheme, tracer_scheme) in ((NormalRadiation(inflow_timescale=100.0, outflow_timescale=1000.0),
+                                              NormalRadiation(inflow_timescale=100.0, outflow_timescale=1000.0)),
+                                             (ObliqueRadiation(inflow_timescale=100.0, outflow_timescale=1000.0),
+                                              TracerReservoir(inflow_length_scale=5000.0, outflow_length_scale=2000.0)))
+        @testset "Open boundary scheme checkpointing [$(typeof(velocity_scheme).name.name), $(typeof(tracer_scheme).name.name)] [$(typeof(arch))]" begin
+            @info "  Testing open boundary scheme checkpointing [$(typeof(velocity_scheme).name.name), $(typeof(tracer_scheme).name.name)] [$(typeof(arch))]..."
+            test_checkpoint_open_boundary_schemes(arch, velocity_scheme, tracer_scheme)
         end
     end
 

@@ -1,7 +1,8 @@
 import Oceananigans: prognostic_state, restore_prognostic_state!
 using Oceananigans.BoundaryConditions:  construct_boundary_conditions_kernels, NFBC, MCBC,
     BoundaryCondition, AbstractBoundaryConditionClassification, LeftBoundary, RightBoundary,
-    Zipper, validate_boundary_condition_architecture, validate_boundary_condition_topology
+    Zipper, validate_boundary_condition_architecture, validate_boundary_condition_topology,
+    boundary_state, restore_boundary_state!
 using Oceananigans.Grids: parent_index_range, default_indices, validate_indices,
     index_range_contains, halo_size, offset_data, interior_parent_indices
 using Oceananigans.Utils: @apply_regionally, getregion
@@ -999,12 +1000,14 @@ Grids.nodes(f::Field; kwargs...) = nodes(f.grid, instantiated_location(f)...; in
 # makes JLD2 reconstruct a *new* device array on read, doubling GPU memory at pickup and
 # OOMing for large fields. `parent` keeps the same indexing as `restored`'s parent below.
 function prognostic_state(field::Field)
-    return (; data = on_architecture(CPU(), parent(field)))
+    return (; data = on_architecture(CPU(), parent(field)),
+              boundary_state = boundary_state(field.boundary_conditions))
 end
 
 function restore_prognostic_state!(restored::Field, from)
     # `from.data` is a host-side copy of the parent data; restore region-by-region when needed.
     @apply_regionally copyto!(parent(restored), from.data)
+    haskey(from, :boundary_state) && restore_boundary_state!(restored.boundary_conditions, from.boundary_state)
     return restored
 end
 

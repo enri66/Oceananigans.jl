@@ -265,3 +265,16 @@ validate_boundary_condition_architecture(::Array, ::CPU, bc, side) = nothing
 
 validate_boundary_condition_architecture(::Array, ::GPU, bc, side) =
     throw(ArgumentError("$side $bc must use `CuArray` rather than `Array` on GPU architectures!"))
+
+#####
+##### Checkpointing
+#####
+
+boundary_state(::Any) = nothing
+boundary_state(bc::BoundaryCondition) = boundary_state(bc.classification)
+boundary_state(classification::Union{Value, NormalFlow}) = boundary_state(classification.scheme)
+
+restore_boundary_state!(::Any, ::Any) = nothing
+restore_boundary_state!(bc::BoundaryCondition, state) = restore_boundary_state!(bc.classification, state)
+restore_boundary_state!(classification::Union{Value, NormalFlow}, state) =
+    restore_boundary_state!(classification.scheme, state)
