@@ -124,7 +124,7 @@ function test_minimal_restore(arch, FT, model_type)
         model = HydrostaticFreeSurfaceModel(grid; buoyancy=SeawaterBuoyancy(), tracers=(:T, :S))
     end
 
-    simulation = Simulation(model; Δt=1.0, stop_time=3.0)
+    simulation = Simulation(model; Δt=1.0, stop_time=3.0, verbose=false)
 
     prefix = "mwe_checkpointer_$(model_type)_$(typeof(arch))_$(FT)"
 
@@ -165,7 +165,7 @@ function test_minimal_restore(arch, FT, model_type)
 
             new_stop_time = 4.0
             new_checkpoint_interval = 0.5
-            new_simulation = Simulation(new_model; Δt=1.0, stop_time=new_stop_time)
+            new_simulation = Simulation(new_model; Δt=1.0, stop_time=new_stop_time, verbose=false)
 
             new_checkpointer = Checkpointer(new_model;
                                             schedule = TimeInterval(new_checkpoint_interval),
@@ -199,7 +199,7 @@ end
 function test_checkpointer_cleanup(arch)
     grid = RectilinearGrid(arch, size=(1, 1, 1), extent=(1, 1, 1))
     model = NonhydrostaticModel(grid; buoyancy=SeawaterBuoyancy(), tracers=(:T, :S))
-    simulation = Simulation(model, Δt=0.2, stop_iteration=10)
+    simulation = Simulation(model; Δt=0.2, stop_iteration=10, verbose=false)
 
     prefix = "checkpointer_cleanup_$(typeof(arch))"
     simulation.output_writers[:checkpointer] = Checkpointer(model;
@@ -242,13 +242,13 @@ function test_thermal_bubble_checkpointing(arch, timestepper, model_type::Symbol
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, T=bubble, S=bubble)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint, then another 5 iterations
     model = make_model()
     set!(model, T=bubble, S=bubble)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "thermal_bubble_checkpointing_$(model_type)_$(typeof(arch))"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -259,7 +259,7 @@ function test_thermal_bubble_checkpointing(arch, timestepper, model_type::Symbol
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -286,7 +286,7 @@ function test_minimal_restore_shallow_water(arch, FT)
 
     model = ShallowWaterModel(grid; gravitational_acceleration=1)
     set!(model, h=1)
-    simulation = Simulation(model; Δt=1.0, stop_time=3.0)
+    simulation = Simulation(model; Δt=1.0, stop_time=3.0, verbose=false)
 
     prefix = "mwe_checkpointer_shallow_water_$(typeof(arch))_$(FT)"
 
@@ -322,7 +322,7 @@ function test_minimal_restore_shallow_water(arch, FT)
             new_model = ShallowWaterModel(new_grid; gravitational_acceleration=1)
             new_stop_time = 4.0
             new_checkpoint_interval = 0.5
-            new_simulation = Simulation(new_model; Δt=1.0, stop_time=new_stop_time)
+            new_simulation = Simulation(new_model; Δt=1.0, stop_time=new_stop_time, verbose=false)
 
             new_checkpointer = Checkpointer(new_model;
                                             schedule = TimeInterval(new_checkpoint_interval),
@@ -370,13 +370,13 @@ function test_height_perturbation_checkpointing_shallow_water(arch, timestepper)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, h=perturbation)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, h=perturbation)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "height_perturbation_checkpointing_shallow_water_$(typeof(arch))"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -387,7 +387,7 @@ function test_height_perturbation_checkpointing_shallow_water(arch, timestepper)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -421,13 +421,13 @@ function test_checkpointing_split_explicit_free_surface(arch, timestepper, free_
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, T=bubble, S=bubble)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, T=bubble, S=bubble)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     fs_ts_name = nameof(typeof(free_surface_timestepper))
     prefix = "split_explicit_checkpointing_$(typeof(arch))_$(timestepper)_$(fs_ts_name)"
@@ -439,7 +439,7 @@ function test_checkpointing_split_explicit_free_surface(arch, timestepper, free_
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -477,13 +477,13 @@ function test_checkpointing_zstar_coordinate(arch, timestepper)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, T=T_init, S=35, u=u_init)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, T=T_init, S=35, u=u_init)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "zstar_checkpointing_$(typeof(arch))_$(timestepper)"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -494,7 +494,7 @@ function test_checkpointing_zstar_coordinate(arch, timestepper)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -539,13 +539,13 @@ function test_checkpointing_implicit_free_surface(arch, solver_method)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, T=bubble, S=bubble)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, T=bubble, S=bubble)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "implicit_free_surface_checkpointing_$(typeof(arch))_$(solver_method)"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -556,7 +556,7 @@ function test_checkpointing_implicit_free_surface(arch, solver_method)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -594,13 +594,13 @@ function test_checkpointing_lagrangian_particles(arch, timestepper)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, u=1, v=0.5, w=0)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, u=1, v=0.5, w=0)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "lagrangian_particles_checkpointing_$(typeof(arch))_$(timestepper)"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -611,7 +611,7 @@ function test_checkpointing_lagrangian_particles(arch, timestepper)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -651,13 +651,13 @@ function test_checkpointing_immersed_boundary_grid(arch, boundary_type)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, T=bubble, S=bubble)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, T=bubble, S=bubble)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "immersed_boundary_checkpointing_$(typeof(arch))_$(boundary_type)"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -668,7 +668,7 @@ function test_checkpointing_immersed_boundary_grid(arch, boundary_type)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -706,13 +706,13 @@ function test_checkpointing_latitude_longitude_grid(arch)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, T=T_init, S=35)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, T=T_init, S=35)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "lat_lon_grid_checkpointing_$(typeof(arch))"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -723,7 +723,7 @@ function test_checkpointing_latitude_longitude_grid(arch)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -752,13 +752,13 @@ function test_checkpointing_float32(arch)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, u=1, v=0.5)
-    ref_simulation = Simulation(ref_model, Δt=Float32(Δt), stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Float32(Δt), stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, u=1, v=0.5)
-    simulation = Simulation(model, Δt=Float32(Δt), stop_iteration=5)
+    simulation = Simulation(model; Δt=Float32(Δt), stop_iteration=5, verbose=false)
 
     prefix = "float32_checkpointing_$(typeof(arch))"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -769,7 +769,7 @@ function test_checkpointing_float32(arch)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Float32(Δt), stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Float32(Δt), stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -802,14 +802,14 @@ function test_checkpointing_auxiliary_fields(arch)
     ref_model = make_model()
     set!(ref_model.auxiliary_fields.custom_field, custom_field_init)
     set!(ref_model, u=1, v=0.5)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model.auxiliary_fields.custom_field, custom_field_init)
     set!(model, u=1, v=0.5)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "auxiliary_fields_checkpointing_$(typeof(arch))"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -820,7 +820,7 @@ function test_checkpointing_auxiliary_fields(arch)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -857,13 +857,13 @@ function test_checkpointing_closure_fields(arch, FT)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, u=u₀, v=v₀, T=T₀, S=S₀)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, u=u₀, v=v₀, T=T₀, S=S₀)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "closure_fields_checkpointing_$(typeof(arch))_$(FT)"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -874,7 +874,7 @@ function test_checkpointing_closure_fields(arch, FT)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -912,14 +912,14 @@ function test_checkpointing_smagorinsky_closure(arch, FT, timestepper, closure, 
     ref_model = make_model()
     set!(ref_model, u=u_init)
     set!(ref_model, T=20, S=35)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, u=u_init)
     set!(model, T=20, S=35)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "$(closure_name)_checkpointing_$(typeof(arch))_$(FT)_$(timestepper)"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -930,7 +930,7 @@ function test_checkpointing_smagorinsky_closure(arch, FT, timestepper, closure, 
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -984,13 +984,13 @@ function test_checkpointing_ri_based_closure(arch, FT, timestepper)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, T=T_init, S=35, u=u_init)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, T=T_init, S=35, u=u_init)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "ri_based_checkpointing_$(typeof(arch))_$(FT)_$(timestepper)"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -1001,7 +1001,7 @@ function test_checkpointing_ri_based_closure(arch, FT, timestepper)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -1044,13 +1044,13 @@ function test_checkpointing_catke_closure(arch, FT, timestepper, closure=CATKEVe
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, T=T_init, S=35, u=u_init)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, T=T_init, S=35, u=u_init)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     closure_prefix = closure isa CATKEVerticalDiffusivity ? "catke" :
                      closure isa NTuple{1} && closure[1] isa CATKEVerticalDiffusivity ? "catke" :
@@ -1066,7 +1066,7 @@ function test_checkpointing_catke_closure(arch, FT, timestepper, closure=CATKEVe
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -1108,7 +1108,7 @@ function test_checkpointing_tke_dissipation_closure(arch, FT, timestepper)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, T=T_init, S=35, u=u_init)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
 
     if timestepper == :SplitRungeKutta3
         # See: https://github.com/CliMA/Oceananigans.jl/issues/5127
@@ -1121,7 +1121,7 @@ function test_checkpointing_tke_dissipation_closure(arch, FT, timestepper)
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, T=T_init, S=35, u=u_init)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "tke_dissipation_checkpointing_$(typeof(arch))_$(FT)_$(timestepper)"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -1132,7 +1132,7 @@ function test_checkpointing_tke_dissipation_closure(arch, FT, timestepper)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -1176,7 +1176,7 @@ function test_checkpoint_continuation_matches_direct(arch, timestepper)
     bubble(x, y, z) = 0.01 * exp(-100 * ((x - Lx/2)^2 + (y - Ly/2)^2 + (z - Lz/2)^2) / (Lx^2 + Ly^2 + Lz^2))
     set!(model_A, T=bubble, S=bubble, u=0.1)
 
-    simulation_A = Simulation(model_A, Δt=Δt, stop_iteration=10)
+    simulation_A = Simulation(model_A; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(simulation_A)
 
     # Run B: Run 5 iterations, checkpoint, restore, run 5 more
@@ -1188,7 +1188,7 @@ function test_checkpoint_continuation_matches_direct(arch, timestepper)
 
     set!(model_B, T=bubble, S=bubble, u=0.1)
 
-    simulation_B = Simulation(model_B, Δt=Δt, stop_iteration=5)
+    simulation_B = Simulation(model_B; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "continuation_test_$(typeof(arch))_$(timestepper)"
     simulation_B.output_writers[:checkpointer] = Checkpointer(model_B,
@@ -1204,7 +1204,7 @@ function test_checkpoint_continuation_matches_direct(arch, timestepper)
                                       buoyancy = SeawaterBuoyancy(),
                                       tracers = (:T, :S))
 
-    simulation_B_new = Simulation(model_B_new, Δt=Δt, stop_iteration=10)
+    simulation_B_new = Simulation(model_B_new; Δt=Δt, stop_iteration=10, verbose=false)
 
     simulation_B_new.output_writers[:checkpointer] = Checkpointer(model_B_new,
                                                                   schedule = IterationInterval(5),
@@ -1309,7 +1309,7 @@ function test_stateful_schedule_checkpointing(arch, schedule_type)
         schedule = WallTimeInterval(0.5)  # 0.5 seconds
     end
 
-    simulation = Simulation(model, Δt=Δt, stop_iteration=15)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=15, verbose=false)
 
     prefix = "schedule_checkpointing_$(typeof(arch))_$(schedule_type)"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -1326,7 +1326,7 @@ function test_stateful_schedule_checkpointing(arch, schedule_type)
     new_grid = RectilinearGrid(arch, size=(N, N, N), extent=(L, L, L))
     new_model = NonhydrostaticModel(new_grid)
 
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=15)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=15, verbose=false)
 
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(10),
@@ -1388,7 +1388,7 @@ Oceananigans.restore_prognostic_state!(::ActuationCounter, ::Nothing) = nothing
 
 function test_stateful_callback_checkpointing(arch)
     grid = RectilinearGrid(arch, size=(4, 4, 4), extent=(1, 1, 1))
-    simulation = Simulation(NonhydrostaticModel(grid), Δt=0.1, stop_iteration=10)
+    simulation = Simulation(NonhydrostaticModel(grid); Δt=0.1, stop_iteration=10, verbose=false)
 
     prefix = "stateful_callback_checkpointing_$(typeof(arch))"
     simulation.output_writers[:checkpointer] = Checkpointer(simulation.model, schedule=IterationInterval(10), prefix=prefix)
@@ -1398,7 +1398,7 @@ function test_stateful_callback_checkpointing(arch)
     checkpointed_actuations = simulation.callbacks[:counter].func.actuations
     @test checkpointed_actuations > 0
 
-    new_simulation = Simulation(NonhydrostaticModel(RectilinearGrid(arch, size=(4, 4, 4), extent=(1, 1, 1))), Δt=0.1, stop_iteration=10)
+    new_simulation = Simulation(NonhydrostaticModel(RectilinearGrid(arch, size=(4, 4, 4), extent=(1, 1, 1))); Δt=0.1, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_simulation.model, schedule=IterationInterval(10), prefix=prefix)
     new_simulation.callbacks[:counter] = Callback(ActuationCounter(0), IterationInterval(1))
 
@@ -1422,7 +1422,7 @@ function test_windowed_time_average_checkpointing(arch, WriterType)
     u_init(x, y, z) = sin(2π * x / Lx)
     set!(model, u=u_init)
 
-    simulation = Simulation(model, Δt=Δt, stop_iteration=8)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=8, verbose=false)
 
     # Writer-specific settings
     if WriterType == JLD2Writer
@@ -1461,7 +1461,7 @@ function test_windowed_time_average_checkpointing(arch, WriterType)
     new_grid = RectilinearGrid(arch, size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz))
     new_model = NonhydrostaticModel(new_grid)
 
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=15)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=15, verbose=false)
 
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(8),
@@ -1545,7 +1545,7 @@ function test_windowed_time_average_continuation_correctness(arch, WriterType)
     u_init(x, y, z) = sin(2π * x / Lx) * cos(2π * y / Ly)
     set!(model_A, u=u_init, v=0.1)
 
-    simulation_A = Simulation(model_A, Δt=Δt, stop_iteration=10)
+    simulation_A = Simulation(model_A; Δt=Δt, stop_iteration=10, verbose=false)
 
     simulation_A.output_writers[:averaged] = WriterType(model_A, model_A.velocities,
                                                        schedule = AveragedTimeInterval(1.0, window=0.5),
@@ -1559,7 +1559,7 @@ function test_windowed_time_average_continuation_correctness(arch, WriterType)
     model_B = NonhydrostaticModel(grid_B)
     set!(model_B, u=u_init, v=0.1)
 
-    simulation_B = Simulation(model_B, Δt=Δt, stop_iteration=7)
+    simulation_B = Simulation(model_B; Δt=Δt, stop_iteration=7, verbose=false)
 
     simulation_B.output_writers[:checkpointer] = Checkpointer(model_B,
                                                               schedule = IterationInterval(7),
@@ -1579,7 +1579,7 @@ function test_windowed_time_average_continuation_correctness(arch, WriterType)
     grid_B_new = RectilinearGrid(arch, size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz))
     model_B_new = NonhydrostaticModel(grid_B_new)
 
-    simulation_B_new = Simulation(model_B_new, Δt=Δt, stop_iteration=10)
+    simulation_B_new = Simulation(model_B_new; Δt=Δt, stop_iteration=10, verbose=false)
 
     simulation_B_new.output_writers[:checkpointer] = Checkpointer(model_B_new,
                                                                   schedule = IterationInterval(7),
@@ -1619,7 +1619,7 @@ function test_changed_averaged_time_interval(arch)
 
     grid = RectilinearGrid(arch, size=(1, 1, 1), extent=(1, 1, 1))
     partial_model = NonhydrostaticModel(grid)
-    partial_simulation = Simulation(partial_model, Δt=0.1days, stop_time=0.5days)
+    partial_simulation = Simulation(partial_model; Δt=0.1days, stop_time=0.5days, verbose=false)
     partial_simulation.output_writers[:checkpointer] =
         Checkpointer(partial_model, schedule=IterationInterval(5), prefix=prefix)
     partial_simulation.output_writers[:averaged] =
@@ -1636,7 +1636,7 @@ function test_changed_averaged_time_interval(arch)
     @test only(Array(partial_average.result)) ≈ 0.3days
 
     restored_model = NonhydrostaticModel(grid)
-    restored_simulation = Simulation(restored_model, Δt=0.1days, stop_time=2days)
+    restored_simulation = Simulation(restored_model; Δt=0.1days, stop_time=2days, verbose=false)
     restored_simulation.output_writers[:checkpointer] =
         Checkpointer(restored_model, schedule=IterationInterval(5), prefix=prefix)
     restored_simulation.output_writers[:averaged] =
@@ -1680,7 +1680,7 @@ function test_inconsistent_averaged_time_interval_checkpoint(arch)
 
     grid = RectilinearGrid(arch, size=(1, 1, 1), extent=(1, 1, 1))
     partial_model = NonhydrostaticModel(grid)
-    partial_simulation = Simulation(partial_model, Δt=0.1days, stop_time=3days)
+    partial_simulation = Simulation(partial_model; Δt=0.1days, stop_time=3days, verbose=false)
     partial_simulation.output_writers[:checkpointer] =
         Checkpointer(partial_model, schedule=IterationInterval(30), prefix=prefix)
     partial_simulation.output_writers[:averaged] =
@@ -1703,7 +1703,7 @@ function test_inconsistent_averaged_time_interval_checkpoint(arch)
     @test_nowarn checkpoint(partial_simulation)
 
     restored_model = NonhydrostaticModel(grid)
-    restored_simulation = Simulation(restored_model, Δt=0.1days, stop_time=8days)
+    restored_simulation = Simulation(restored_model; Δt=0.1days, stop_time=8days, verbose=false)
     restored_simulation.output_writers[:checkpointer] =
         Checkpointer(restored_model, schedule=IterationInterval(30), prefix=prefix)
     restored_simulation.output_writers[:averaged] =
@@ -1748,13 +1748,13 @@ function test_checkpoint_empty_tracers(arch)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, u=1, v=0.5)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, checkpoint
     model = make_model()
     set!(model, u=1, v=0.5)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "empty_tracers_checkpointing_$(typeof(arch))"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -1765,7 +1765,7 @@ function test_checkpoint_empty_tracers(arch)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(5),
                                                                 prefix = prefix)
@@ -1789,7 +1789,7 @@ function test_checkpoint_missing_file_warning(arch)
     grid = RectilinearGrid(arch, size=(N, N, N), extent=(L, L, L))
     model = NonhydrostaticModel(grid)
 
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     # Use a unique prefix that doesn't have any checkpoint files
     prefix = "nonexistent_checkpoint_$(typeof(arch))_$(rand(1:100000))"
@@ -1814,7 +1814,7 @@ function test_pickup_mode_selection_and_default(arch)
     function make_simulation(; stop_iteration=3)
         grid = RectilinearGrid(arch, size=(N, N, N), extent=(L, L, L))
         model = NonhydrostaticModel(grid)
-        return Simulation(model, Δt=Δt, stop_iteration=stop_iteration)
+        return Simulation(model; Δt=Δt, stop_iteration=stop_iteration, verbose=false)
     end
 
     prefix = "pickup_mode_selection_$(typeof(arch))_$(rand(UInt))"
@@ -1889,13 +1889,13 @@ function test_manual_checkpoint_with_checkpointer(arch)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, u=1, v=0.5)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, manual checkpoint
     model = make_model()
     set!(model, u=1, v=0.5)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     prefix = "manual_checkpoint_with_checkpointer_$(typeof(arch))"
     simulation.output_writers[:checkpointer] = Checkpointer(model,
@@ -1910,7 +1910,7 @@ function test_manual_checkpoint_with_checkpointer(arch)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
     new_simulation.output_writers[:checkpointer] = Checkpointer(new_model,
                                                                 schedule = IterationInterval(10),
                                                                 prefix = prefix)
@@ -1941,13 +1941,13 @@ function test_manual_checkpoint_without_checkpointer(arch)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, u=1, v=0.5)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, manual checkpoint (no Checkpointer configured)
     model = make_model()
     set!(model, u=1, v=0.5)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     @test_nowarn run!(simulation)
 
@@ -1960,7 +1960,7 @@ function test_manual_checkpoint_without_checkpointer(arch)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
 
     @test_nowarn set!(new_simulation; checkpoint=expected_filepath)
     @test iteration(new_simulation) == 5
@@ -1988,13 +1988,13 @@ function test_manual_checkpoint_with_filepath(arch)
     # Reference run: 10 iterations continuously
     ref_model = make_model()
     set!(ref_model, u=1, v=0.5)
-    ref_simulation = Simulation(ref_model, Δt=Δt, stop_iteration=10)
+    ref_simulation = Simulation(ref_model; Δt=Δt, stop_iteration=10, verbose=false)
     @test_nowarn run!(ref_simulation)
 
     # Checkpointed run: 5 iterations, manual checkpoint with custom filepath
     model = make_model()
     set!(model, u=1, v=0.5)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     # Add a Checkpointer with a different prefix
     prefix = "should_not_use_this_$(typeof(arch))"
@@ -2013,7 +2013,7 @@ function test_manual_checkpoint_with_filepath(arch)
 
     # Restore and continue for 5 more iterations
     new_model = make_model()
-    new_simulation = Simulation(new_model, Δt=Δt, stop_iteration=10)
+    new_simulation = Simulation(new_model; Δt=Δt, stop_iteration=10, verbose=false)
 
     @test_nowarn set!(new_simulation; checkpoint=custom_filepath)
     @test iteration(new_simulation) == 5
@@ -2041,7 +2041,7 @@ function test_checkpoint_at_end(arch)
     # Test with checkpoint_at_end=false (default) - should NOT create checkpoint
     grid = RectilinearGrid(arch, size=(N, N, N), extent=(L, L, L))
     model = NonhydrostaticModel(grid)
-    simulation = Simulation(model, Δt=Δt, stop_iteration=5)
+    simulation = Simulation(model; Δt=Δt, stop_iteration=5, verbose=false)
 
     @test_nowarn run!(simulation)
 
@@ -2051,7 +2051,7 @@ function test_checkpoint_at_end(arch)
     grid2 = RectilinearGrid(arch, size=(N, N, N), extent=(L, L, L))
     model2 = NonhydrostaticModel(grid2)
     set!(model2, u=1, v=0.5)
-    simulation2 = Simulation(model2, Δt=Δt, stop_iteration=5)
+    simulation2 = Simulation(model2; Δt=Δt, stop_iteration=5, verbose=false)
 
     @test_nowarn run!(simulation2, checkpoint_at_end=true)  # Should create checkpoint
 
@@ -2061,7 +2061,7 @@ function test_checkpoint_at_end(arch)
     # Test with checkpoint_at_end=true and NaN-triggered stop - should NOT create checkpoint
     grid3 = RectilinearGrid(arch, size=(N, N, N), extent=(L, L, L))
     model3 = NonhydrostaticModel(grid3)
-    simulation3 = Simulation(model3, Δt=Δt, stop_iteration=5)
+    simulation3 = Simulation(model3; Δt=Δt, stop_iteration=5, verbose=false)
     model3.velocities.u[1, 1, 1] = NaN
 
     @test_logs match_mode=:any (:info, r"NaN found in field") (:info, r"Skipping end-of-run checkpoint") begin
@@ -2074,7 +2074,7 @@ function test_checkpoint_at_end(arch)
     # This exercises nan_detected(::Any) and reset_nan_checker!(::Any).
     grid4 = RectilinearGrid(arch, size=(N, N, N), extent=(L, L, L))
     model4 = NonhydrostaticModel(grid4)
-    simulation4 = Simulation(model4, Δt=Δt, stop_iteration=5)
+    simulation4 = Simulation(model4; Δt=Δt, stop_iteration=5, verbose=false)
     simulation4.callbacks[:nan_checker] = Callback(_ -> nothing, IterationInterval(1))
 
     @test_nowarn run!(simulation4, checkpoint_at_end=true)
@@ -2107,7 +2107,7 @@ function test_open_boundary_condition_scheme_checkpointing(arch, timestepper, sc
         u_bcs = FieldBoundaryConditions(west=obc, east=obc)
         model = NonhydrostaticModel(grid; timestepper, boundary_conditions=(u=u_bcs,), tracers=:c)
         set!(model, c=1)
-        return Simulation(model, Δt=Δt, stop_iteration=stop_iteration)
+        return Simulation(model; Δt=Δt, stop_iteration=stop_iteration, verbose=false)
     end
 
     # Run simulation and checkpoint
@@ -2171,7 +2171,7 @@ function test_checkpointing_with_file_splitting(arch, WriterType)
 
     grid = RectilinearGrid(arch, size=(4, 4, 4), extent=(1, 1, 1))
     model = NonhydrostaticModel(grid, tracers=:c)
-    simulation = Simulation(model, Δt=1, stop_time=10)
+    simulation = Simulation(model; Δt=1, stop_time=10, verbose=false)
 
     simulation.output_writers[:fields] = WriterType(model, model.tracers;
                                                     filename = "split_ckpt",
@@ -2195,7 +2195,7 @@ function test_checkpointing_with_file_splitting(arch, WriterType)
     # Pickup from checkpoint and continue
     grid2 = RectilinearGrid(arch, size=(4, 4, 4), extent=(1, 1, 1))
     model2 = NonhydrostaticModel(grid2, tracers=:c)
-    sim2 = Simulation(model2, Δt=1, stop_time=20)
+    sim2 = Simulation(model2; Δt=1, stop_time=20, verbose=false)
 
     sim2.output_writers[:fields] = WriterType(model2, model2.tracers;
                                               filename = "split_ckpt",
@@ -2254,7 +2254,7 @@ function test_checkpointing_with_moved_parts(arch)
 
     grid = RectilinearGrid(arch, size=(4, 4, 4), extent=(1, 1, 1))
     model = NonhydrostaticModel(grid, tracers=:c)
-    simulation = Simulation(model, Δt=1, stop_time=10)
+    simulation = Simulation(model; Δt=1, stop_time=10, verbose=false)
 
     simulation.output_writers[:fields] = JLD2Writer(model, model.tracers;
                                                      filename = "moved_test",
@@ -2283,7 +2283,7 @@ function test_checkpointing_with_moved_parts(arch)
     # Pickup and continue
     grid2 = RectilinearGrid(arch, size=(4, 4, 4), extent=(1, 1, 1))
     model2 = NonhydrostaticModel(grid2, tracers=:c)
-    sim2 = Simulation(model2, Δt=1, stop_time=15)
+    sim2 = Simulation(model2; Δt=1, stop_time=15, verbose=false)
 
     sim2.output_writers[:fields] = JLD2Writer(model2, model2.tracers;
                                                filename = "moved_test",
