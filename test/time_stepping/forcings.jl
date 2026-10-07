@@ -493,6 +493,23 @@ function test_heterogeneous_model_fields_dependencies(arch)
     @test Gc ≈ Gd
 
     return nothing
+
+""" A split Runge-Kutta step of `HydrostaticFreeSurfaceModel` uses the momentum forcing as it is when the step starts. """
+function test_split_runge_kutta_momentum_forcing_at_step_start(arch)
+    grid = RectilinearGrid(arch, size=(4, 4, 4), extent=(1, 1, 1))
+
+    function velocity_after_forcing_change(refresh)
+        Fu = XFaceField(grid)
+        model = HydrostaticFreeSurfaceModel(grid; forcing=(; u=Fu), timestepper=:SplitRungeKutta3, coriolis=FPlane(f=1),
+                                            tracers=(), buoyancy=nothing)
+        time_step!(model, 1)
+        set!(Fu, 1)
+        refresh && update_state!(model)
+        time_step!(model, 1)
+        return Array(interior(model.velocities.u))
+    end
+
+    return velocity_after_forcing_change(false) == velocity_after_forcing_change(true)
 end
 
 """ Build a time-invariant FTS where each snapshot equals `f(x, y, z)`. Used to
@@ -595,6 +612,11 @@ end
 
             @testset "Field dependencies with heterogeneous model fields [$A]" begin
                 test_heterogeneous_model_fields_dependencies(arch)
+            end
+
+            @testset "HydrostaticFreeSurfaceModel split Runge-Kutta momentum forcing at step start [$A]" begin
+                @info "      Testing split Runge-Kutta momentum forcing at step start [$A]..."
+                @test test_split_runge_kutta_momentum_forcing_at_step_start(arch)
             end
 
             @testset "Relaxation forcing functions [$A]" begin
