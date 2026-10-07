@@ -60,7 +60,7 @@ ObliqueRadiation{Float64}
 └── target_transport: Nothing
 ```
 """
-struct ObliqueRadiation{FT, S, B, TF} <: AbstractRadiationScheme{FT}
+struct ObliqueRadiation{FT, S, B, A, TF} <: AbstractRadiationScheme{FT}
     outflow_timescale  :: FT
     inflow_timescale   :: FT
     phase_speed_weight :: FT
@@ -74,6 +74,7 @@ struct ObliqueRadiation{FT, S, B, TF} <: AbstractRadiationScheme{FT}
     c  :: B
     normal_interior :: B   # tangential velocity only: the two adjacent normal-velocity interior values,
                            # [.., .., 1:2] start-of-step and latest on one side, [.., .., 3:4] on the other
+    anchors :: A           # iteration of the last anchored fill at each boundary point
     target_transport :: TF # prescribed net transport through the boundary, or nothing
 end
 
@@ -89,7 +90,7 @@ function ObliqueRadiation(FT = defaults.FloatType;
     phase_speed_weight = convert(FT, phase_speed_weight)
     target_transport = convert_target_transport(FT, target_transport)
     return ObliqueRadiation(outflow_timescale, inflow_timescale, phase_speed_weight,
-                            nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, target_transport)
+                            nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, target_transport)
 end
 
 Adapt.adapt_structure(to, r::ObliqueRadiation) =
@@ -105,6 +106,7 @@ Adapt.adapt_structure(to, r::ObliqueRadiation) =
                      adapt(to, r.rₜ),
                      adapt(to, r.c),
                      adapt(to, r.normal_interior),
+                     adapt(to, r.anchors),
                      adapt(to, r.target_transport))
 
 function Base.show(io::IO, r::ObliqueRadiation)
@@ -118,21 +120,22 @@ end
 # Inflow and outflow are distinguished by the direction of the phase speed, not by the velocity.
 @inline uses_boundary_velocity(::ObliqueRadiation) = false
 
-has_target_transport(::ObliqueRadiation{<:Any, <:Any, <:Any, <:Nothing}) = false
+has_target_transport(::ObliqueRadiation{<:Any, <:Any, <:Any, <:Any, <:Nothing}) = false
 has_target_transport(::ObliqueRadiation) = true
 
 radiation_buffers(radiation::ObliqueRadiation, arch, FT, tangential_size) =
     (ntuple(_ -> zeros(arch, FT, tangential_size...), 3)...,
      ntuple(_ -> zeros(arch, FT, tangential_size..., 2), 5)...,
-     zeros(arch, FT, tangential_size..., 4))
+     zeros(arch, FT, tangential_size..., 4),
+     anchor_buffer(arch, tangential_size))
 
 radiation_buffers(radiation::ObliqueRadiation) =
     (radiation.φᵇ, radiation.φ₁, radiation.φ₁ˡ, radiation.previous_boundary, radiation.previous_interior,
-     radiation.rₙ, radiation.rₜ, radiation.c, radiation.normal_interior)
+     radiation.rₙ, radiation.rₜ, radiation.c, radiation.normal_interior, radiation.anchors)
 
-radiation_storage(radiation::ObliqueRadiation, (φᵇ, φ₁, φ₁ˡ, previous_boundary, previous_interior, rₙ, rₜ, c, normal_interior)) =
+radiation_storage(radiation::ObliqueRadiation, (φᵇ, φ₁, φ₁ˡ, previous_boundary, previous_interior, rₙ, rₜ, c, normal_interior, anchors)) =
     ObliqueRadiation(radiation.outflow_timescale, radiation.inflow_timescale, radiation.phase_speed_weight,
-                     φᵇ, φ₁, φ₁ˡ, previous_boundary, previous_interior, rₙ, rₜ, c, normal_interior, radiation.target_transport)
+                     φᵇ, φ₁, φ₁ˡ, previous_boundary, previous_interior, rₙ, rₜ, c, normal_interior, anchors, radiation.target_transport)
 
 # Fills read the buffer written during the previous iteration and write the other one.
 @inline written_buffer(clock) = clock.iteration % 2 + 1
@@ -200,7 +203,7 @@ end
 # The averages advance once per time step: the first fill of a step promotes the latest average to the
 # start-of-step value, and every fill of the step averages from that start-of-step value.
 @inline function average_phase_speeds!(radiation, t, k, clock, rₙ, rₜ, c)
-    anchored = anchored_fill(clock)
+    anchored = anchored_fill(clock, radiation.anchors, t, k)
     ω = radiation.phase_speed_weight
     @inbounds begin
         r̄ₙ⁰ = ifelse(anchored, radiation.rₙ[t, k, 2], radiation.rₙ[t, k, 1])
@@ -244,7 +247,7 @@ end
         return radiation_update(radiation, t, k, clock, φᵇⁿ, φ₁ⁿ⁺¹, φ₂ⁿ⁺¹, φ₁ⁿ, φᵉˣᵗ, Δt, nothing, nothing)
 
     first_call = isinf(stage_Δt(clock))
-    anchored = anchored_fill(clock)
+    anchored = anchored_fill(clock, radiation.anchors, t, k)
     u₁₋ⁿ = previous_normal_interior!(radiation, t, k, 1, u₁₋, first_call, anchored)
     u₁₊ⁿ = previous_normal_interior!(radiation, t, k, 3, u₁₊, first_call, anchored)
     rₙ₋, rₜ₋, c₋, _ = oblique_phase_speeds(u₁₋, u₂₋, u₁₋ⁿ, δ₋₋, δ₋₊)
@@ -289,8 +292,8 @@ end
     Δτ = stage_Δt(clock)
     first_call = isinf(Δτ)
     Δt = ifelse(first_call, zero(Δτ), Δτ)
-    anchored = anchored_fill(clock)
     radiation = bc.classification.scheme
+    anchored = anchored_fill(clock, radiation.anchors, t, k)
 
     @inbounds begin
         φᵉˣᵗ  = getbc(bc, t, k, grid, clock, model_fields)
@@ -306,6 +309,7 @@ end
         radiation.φᵇ[t, k]  = φᵇⁿ
         radiation.φ₁[t, k]  = φ₁ⁿ
         radiation.φ₁ˡ[t, k] = φ₁ⁿ⁺¹
+        record_anchor!(radiation.anchors, t, k, clock, anchored, first_call)
     end
 
     return nothing
