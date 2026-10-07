@@ -3,7 +3,7 @@ include(joinpath(@__DIR__, "..", "setup", "dependencies_for_runtests.jl"))
 using MPI
 MPI.Initialized() || MPI.Init(threadlevel=:multiple)
 
-using Oceananigans.DistributedComputations: child_architecture, cpu_architecture, partition, ranks, reconstruct_global_grid
+using Oceananigans.DistributedComputations: child_architecture, cpu_architecture, partition, reconstruct_global_grid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom, immersed_peripheral_node
 using Oceananigans.BoundaryConditions: NormalRadiation, GravityWaveRadiationBoundaryCondition
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: LocalHaloFilling, CompleteHaloFilling
@@ -83,24 +83,33 @@ end
 # `substeps = 8` extends the halo to 7 in Connected directions, which must stay below the local
 # extent: this rules out the `Fractional` partitions of `archs` at this grid size.
 
+# Open boundaries on the west/east faces (`direction = :x`) or on the south/north faces (`direction = :y`).
 ηᵢ(x, y, z) = 0.01 * exp(-(x - 0.5)^2 / 0.08) * (1 + 0.2 * cos(2π * y))
+ηᵢʸ(x, y, z) = ηᵢ(y, x, z)
 
-function build_open(grid; extend_halos)
-    u_bcs = FieldBoundaryConditions(west = NormalFlowBoundaryCondition(0; scheme = NormalRadiation(outflow_timescale = 100.0)),
-                                    east = NormalFlowBoundaryCondition(0; scheme = NormalRadiation(outflow_timescale = 100.0)))
+radiating() = NormalFlowBoundaryCondition(0; scheme = NormalRadiation(outflow_timescale = 100.0))
 
-    U_bcs = FieldBoundaryConditions(grid, (Face(), Center(), nothing);
-                                    west = GravityWaveRadiationBoundaryCondition((0.0, 0.0)),
-                                    east = GravityWaveRadiationBoundaryCondition((0.0, 0.0)))
+function build_open(grid; extend_halos, direction)
+    boundary_conditions = if direction == :x
+        (u = FieldBoundaryConditions(west = radiating(), east = radiating()),
+         U = FieldBoundaryConditions(grid, (Face(), Center(), nothing);
+                                     west = GravityWaveRadiationBoundaryCondition((0.0, 0.0)),
+                                     east = GravityWaveRadiationBoundaryCondition((0.0, 0.0))))
+    else
+        (v = FieldBoundaryConditions(south = radiating(), north = radiating()),
+         V = FieldBoundaryConditions(grid, (Center(), Face(), nothing);
+                                     south = GravityWaveRadiationBoundaryCondition((0.0, 0.0)),
+                                     north = GravityWaveRadiationBoundaryCondition((0.0, 0.0))))
+    end
 
     free_surface = SplitExplicitFreeSurface(grid; substeps=8, extend_halos)
 
     model = HydrostaticFreeSurfaceModel(grid; free_surface,
-                                        boundary_conditions = (u = u_bcs, U = U_bcs),
+                                        boundary_conditions,
                                         momentum_advection = nothing,
                                         buoyancy = nothing,
                                         tracers = ())
-    set!(model, η = ηᵢ)
+    set!(model, η = direction == :x ? ηᵢ : ηᵢʸ)
 
     for _ in 1:10
         time_step!(model, 5e-3)
@@ -113,51 +122,46 @@ end
     open_archs = (Distributed(child_arch; synchronized_communication=false, partition=Partition(4)),
                   Distributed(child_arch; synchronized_communication=false, partition=Partition(2, 2)))
 
-    for arch in open_archs, extend_halos in (true, false)
+    for arch in open_archs, extend_halos in (true, false), direction in (:x, :y)
         cpu_arch = cpu_architecture(arch)
 
-        grid = RectilinearGrid(arch, size=(40, 20, 2), x=(0, 1), y=(0, 1), z=(-1, 0),
-                               halo=(4, 4, 2), topology=(Bounded, Periodic, Bounded))
+        topology = direction == :x ? (Bounded, Periodic, Bounded) : (Periodic, Bounded, Bounded)
+        grid = RectilinearGrid(arch; size=(40, 20, 2), x=(0, 1), y=(0, 1), z=(-1, 0), halo=(4, 4, 2), topology)
         global_grid = reconstruct_global_grid(grid)
 
-        mp = build_open(grid; extend_halos)         # partitioned
-        ms = build_open(global_grid; extend_halos)  # serial reference
+        mp = build_open(grid; extend_halos, direction)         # partitioned
+        ms = build_open(global_grid; extend_halos, direction)  # serial reference
 
         strategy = extend_halos ? LocalHaloFilling : CompleteHaloFilling
-
-        # `LocalHaloFilling` skips the fill that re-radiates the open boundary into a y rank halo
-        reproduces_serial = !extend_halos || ranks(arch)[2] == 1
 
         up = interior(on_architecture(cpu_arch, mp.velocities.u))
         vp = interior(on_architecture(cpu_arch, mp.velocities.v))
         ηp = interior(on_architecture(cpu_arch, mp.free_surface.displacement))
 
         u_global = interior(on_architecture(CPU(), ms.velocities.u))
+        v_global = interior(on_architecture(CPU(), ms.velocities.v))
         us = partition(u_global, cpu_arch, size(up))
-        vs = partition(interior(on_architecture(CPU(), ms.velocities.v)), cpu_arch, size(vp))
+        vs = partition(v_global, cpu_arch, size(vp))
         ηs = partition(interior(on_architecture(CPU(), ms.free_surface.displacement)), cpu_arch, size(ηp))
 
-        @testset "open boundaries [extend_halos=$extend_halos, $(typeof(arch.partition))]" begin
+        @testset "open boundaries [direction=$direction, extend_halos=$extend_halos, $(typeof(arch.partition))]" begin
             @test mp.free_surface isa SplitExplicitFreeSurface{strategy}
             @test ms.free_surface isa SplitExplicitFreeSurface{strategy}
 
-            if reproduces_serial
-                @test all(isapprox.(up, us))
-                @test all(isapprox.(vp, vs))
-                @test all(isapprox.(ηp, ηs))
-            else
-                @test_broken all(isapprox.(up, us))
-                @test_broken all(isapprox.(vp, vs))
-                @test_broken all(isapprox.(ηp, ηs))
-
-                @test maximum(abs, up .- us) < 1e-2 * maximum(abs, us)
-                @test maximum(abs, ηp .- ηs) < 1e-2 * maximum(abs, ηs)
-            end
+            @test all(isapprox.(up, us))
+            @test all(isapprox.(vp, vs))
+            @test all(isapprox.(ηp, ηs))
 
             # a solid wall would pin the normal velocity on the global faces to zero
-            @test maximum(abs, up) > 0
-            @test maximum(abs, u_global[1, :, :])   > 0
-            @test maximum(abs, u_global[end, :, :]) > 0
+            if direction == :x
+                @test maximum(abs, up) > 0
+                @test maximum(abs, u_global[1, :, :])   > 0
+                @test maximum(abs, u_global[end, :, :]) > 0
+            else
+                @test maximum(abs, vp) > 0
+                @test maximum(abs, v_global[:, 1, :])   > 0
+                @test maximum(abs, v_global[:, end, :]) > 0
+            end
         end
     end
 end

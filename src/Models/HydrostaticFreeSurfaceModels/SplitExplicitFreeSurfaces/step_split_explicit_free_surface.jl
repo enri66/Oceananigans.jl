@@ -153,10 +153,13 @@ function iterate_split_explicit!(free_surface::FillHaloSplitExplicit, grid, GU�
             substep_clock = (; time = clock.time + (substep - 1) * Δτᴮ, iteration = clock.iteration, stage = 1, last_stage_Δt = Δτᴮ)
 
             maybe_distributed_fill_halo_regions!(arch, converted_η_halo_args[1:end-1]..., substep_clock, converted_η_halo_args[end]; only_local_halos)
+            fill_open_boundaries_in_extended_halo!(free_surface, η, grid, substep_clock, barotropic_model_fields)
             @apply_regionally apply_barotropic_kernel!(velocity_kernel!, transport_weight, converted_U_args)
 
             maybe_distributed_fill_halo_regions!(arch, converted_U_halo_args[1:end-1]..., substep_clock, converted_U_halo_args[end]; only_local_halos)
             maybe_distributed_fill_halo_regions!(arch, converted_V_halo_args[1:end-1]..., substep_clock, converted_V_halo_args[end]; only_local_halos)
+            fill_open_boundaries_in_extended_halo!(free_surface, U, grid, substep_clock, barotropic_model_fields)
+            fill_open_boundaries_in_extended_halo!(free_surface, V, grid, substep_clock, barotropic_model_fields)
             pin_barotropic_faces!(face_pins)
             @apply_regionally apply_barotropic_kernel!(free_surface_kernel!, averaging_weight, converted_η_args)
         end
@@ -221,6 +224,50 @@ end
 #####
 ##### SplitExplicitFreeSurface barotropic subcycling
 #####
+
+#####
+##### Open boundaries in the extended halo (`LocalHaloFilling`)
+#####
+
+# Fill the open boundaries perpendicular to each extended direction over the halo part of the substep kernel range.
+fill_open_boundaries_in_extended_halo!(free_surface, args...) = nothing
+
+function fill_open_boundaries_in_extended_halo!(::SplitExplicitFreeSurface{LocalHaloFilling}, field, grid, clock, model_fields)
+    TX, TY, _ = topology(grid)
+    Nx, Ny, _ = size(grid)
+    Hx, Hy, _ = halo_size(grid)
+
+    bcs  = field.boundary_conditions
+    loc  = instantiated_location(field)
+    k    = field.indices[3] isa Colon ? (1:1) : field.indices[3]
+    args = (clock, model_fields)
+
+    irange = split_explicit_kernel_size(TX, Nx, Hx)
+    jrange = split_explicit_kernel_size(TY, Ny, Hy)
+
+    for range in (first(irange):0, Nx+1:last(irange))
+        refill_side!(field, bcs.south, _fill_only_south_halo!, range, k, loc, grid, args)
+        refill_side!(field, bcs.north, _fill_only_north_halo!, range, k, loc, grid, args)
+    end
+
+    for range in (first(jrange):0, Ny+1:last(jrange))
+        refill_side!(field, bcs.west, _fill_only_west_halo!, range, k, loc, grid, args)
+        refill_side!(field, bcs.east, _fill_only_east_halo!, range, k, loc, grid, args)
+    end
+
+    return nothing
+end
+
+# Boundary conditions without per-point storage
+refill_in_halo(bc) = false
+refill_in_halo(::GWNFBC) = true
+refill_in_halo(::IGWVBC) = true
+
+function refill_side!(field, bc, kernel!, range, k, loc, grid, args)
+    (refill_in_halo(bc) && !isempty(range)) || return nothing
+    launch!(architecture(grid), grid, KernelParameters(range, k), kernel!, field.data, bc, loc, grid, args)
+    return nothing
+end
 
 # Open boundaries read model fields while filling the barotropic halos; `ExtendedHalos` has none, so it
 # fills without threading them, which avoids a per-step allocation on distributed grids.
