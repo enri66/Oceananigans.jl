@@ -60,22 +60,25 @@ ObliqueRadiation{Float64}
 └── target_transport: Nothing
 ```
 """
-struct ObliqueRadiation{FT, S, B, A, TF} <: AbstractRadiationScheme{FT}
+struct ObliqueRadiation{FT, S, P, R, A, TF, TB, E} <: AbstractRadiationScheme{FT}
     outflow_timescale  :: FT
     inflow_timescale   :: FT
     phase_speed_weight :: FT
     φᵇ  :: S
     φ₁  :: S
     φ₁ˡ :: S
-    previous_boundary :: B # boundary values written during the previous iteration, double-buffered by iteration parity
-    previous_interior :: B # first-interior values, likewise
-    rₙ :: B                # time-averaged coefficients: [.., .., 1] at the start of the step, [.., .., 2] latest
-    rₜ :: B
-    c  :: B
-    normal_interior :: B   # tangential velocity only: the two adjacent normal-velocity interior values,
+    previous_boundary :: P # boundary values written during the previous iteration, one array per iteration parity,
+                           # with halos along the boundary that hold the values of neighbouring ranks
+    previous_interior :: P # first-interior values, likewise
+    rₙ :: R                # time-averaged coefficients: [.., .., 1] at the start of the step, [.., .., 2] latest
+    rₜ :: R
+    c  :: R
+    normal_interior :: R   # tangential velocity only: the two adjacent normal-velocity interior values,
                            # [.., .., 1:2] start-of-step and latest on one side, [.., .., 3:4] on the other
     anchors :: A           # iteration of the last anchored fill at each boundary point
     target_transport :: TF # prescribed net transport through the boundary, or nothing
+    tangential_bounds :: TB # first and last index along the boundary that the tangential differences read
+    state_fields :: E      # the fields holding previous_boundary and previous_interior, whose halos are filled
 end
 
 function ObliqueRadiation(FT = defaults.FloatType;
@@ -90,7 +93,8 @@ function ObliqueRadiation(FT = defaults.FloatType;
     phase_speed_weight = convert(FT, phase_speed_weight)
     target_transport = convert_target_transport(FT, target_transport)
     return ObliqueRadiation(outflow_timescale, inflow_timescale, phase_speed_weight,
-                            nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, target_transport)
+                            nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing,
+                            target_transport, nothing, nothing)
 end
 
 Adapt.adapt_structure(to, r::ObliqueRadiation) =
@@ -107,7 +111,9 @@ Adapt.adapt_structure(to, r::ObliqueRadiation) =
                      adapt(to, r.c),
                      adapt(to, r.normal_interior),
                      adapt(to, r.anchors),
-                     adapt(to, r.target_transport))
+                     adapt(to, r.target_transport),
+                     r.tangential_bounds,
+                     nothing)
 
 function Base.show(io::IO, r::ObliqueRadiation)
     print(io, summary(r), '\n')
@@ -120,34 +126,62 @@ end
 # Inflow and outflow are distinguished by the direction of the phase speed, not by the velocity.
 @inline uses_boundary_velocity(::ObliqueRadiation) = false
 
-has_target_transport(::ObliqueRadiation{<:Any, <:Any, <:Any, <:Any, <:Nothing}) = false
+has_target_transport(::ObliqueRadiation{<:Any, <:Any, <:Any, <:Any, <:Any, <:Nothing}) = false
 has_target_transport(::ObliqueRadiation) = true
 
-radiation_buffers(radiation::ObliqueRadiation, arch, FT, tangential_size) =
-    (ntuple(_ -> zeros(arch, FT, tangential_size...), 3)...,
-     ntuple(_ -> zeros(arch, FT, tangential_size..., 2), 5)...,
-     zeros(arch, FT, tangential_size..., 4),
-     anchor_buffer(arch, tangential_size))
+# The previous boundary and first-interior values are kept in fields that span the boundary, so that their halos along
+# it can hold the values of a neighbouring rank (or of the other end of a periodic boundary).
+function materialize_radiation_storage(radiation::ObliqueRadiation, grid, loc, dim)
+    FT = eltype(grid)
+    arch = architecture(grid)
+    Sx, Sy, Sz = size(grid, loc)
+
+    tangential_size = dim == 1 ? (Sy, Sz) :
+                      dim == 2 ? (Sx, Sz) :
+                                 (Sx, Sy)
+
+    φᵇ, φ₁, φ₁ˡ = ntuple(_ -> zeros(arch, FT, tangential_size...), 3)
+    rₙ, rₜ, c = ntuple(_ -> zeros(arch, FT, tangential_size..., 2), 3)
+    normal_interior = zeros(arch, FT, tangential_size..., 4)
+    anchors = anchor_buffer(arch, tangential_size)
+
+    state_fields = ntuple(_ -> boundary_state_field(grid, loc, dim), 4)
+    previous_boundary = map(f -> along_boundary(f, dim), state_fields[1:2])
+    previous_interior = map(f -> along_boundary(f, dim), state_fields[3:4])
+
+    T = topology(grid, dim == 1 ? 2 : 1)
+    N = tangential_size[1]
+    tangential_bounds = (ifelse(neighbour_on_left(T), 0, 1), ifelse(neighbour_on_right(T), N + 1, N))
+
+    return ObliqueRadiation(radiation.outflow_timescale, radiation.inflow_timescale, radiation.phase_speed_weight,
+                            φᵇ, φ₁, φ₁ˡ, previous_boundary, previous_interior, rₙ, rₜ, c, normal_interior, anchors,
+                            radiation.target_transport, tangential_bounds, state_fields)
+end
 
 radiation_buffers(radiation::ObliqueRadiation) =
-    (radiation.φᵇ, radiation.φ₁, radiation.φ₁ˡ, radiation.previous_boundary, radiation.previous_interior,
+    (radiation.φᵇ, radiation.φ₁, radiation.φ₁ˡ, map(f -> parent(f.data), radiation.state_fields)...,
      radiation.rₙ, radiation.rₜ, radiation.c, radiation.normal_interior, radiation.anchors)
 
-radiation_storage(radiation::ObliqueRadiation, (φᵇ, φ₁, φ₁ˡ, previous_boundary, previous_interior, rₙ, rₜ, c, normal_interior, anchors)) =
-    ObliqueRadiation(radiation.outflow_timescale, radiation.inflow_timescale, radiation.phase_speed_weight,
-                     φᵇ, φ₁, φ₁ˡ, previous_boundary, previous_interior, rₙ, rₜ, c, normal_interior, anchors, radiation.target_transport)
+const OBC = BoundaryCondition{<:Union{Value{<:ObliqueRadiation}, NormalFlow{<:ObliqueRadiation}}}
+
+# Once per stage, the halos of the previous values take those of the neighbouring ranks
+function update_boundary_condition!(bc::OBC, side, field, model)
+    state_fields = bc.classification.scheme.state_fields
+    isnothing(state_fields) || foreach(fill_halo_regions!, state_fields)
+    return nothing
+end
 
 # Fills read the buffer written during the previous iteration and write the other one.
 @inline written_buffer(clock) = clock.iteration % 2 + 1
 @inline written_buffer(::Nothing) = 1
 
-# Backward and forward differences along the boundary face, zero beyond its ends.
-@inline function tangential_differences(φ, t, k, b)
-    T = size(φ, 1)
+# Backward and forward differences along the boundary face, zero beyond its ends. Next to a rank edge the neighbour is
+# in the halo of φ, which holds the neighbouring rank's value.
+@inline function tangential_differences(φ, t, k, (lower, upper))
     @inbounds begin
-        φ₀ = φ[t, k, b]
-        φ₋ = φ[max(t - 1, 1), k, b]
-        φ₊ = φ[min(t + 1, T), k, b]
+        φ₀ = φ[t, k]
+        φ₋ = φ[max(t - 1, lower), k]
+        φ₊ = φ[min(t + 1, upper), k]
     end
     return φ₀ - φ₋, φ₊ - φ₀
 end
@@ -184,17 +218,17 @@ end
 # `outflow` and `Cᵃ` are unused: inflow and outflow are distinguished by the direction of the phase speed.
 @inline function radiation_update(radiation::ObliqueRadiation, t, k, clock, φᵇⁿ, φ₁ⁿ⁺¹, φ₂ⁿ⁺¹, φ₁ⁿ, φᵉˣᵗ, Δt, outflow, Cᵃ)
     w = written_buffer(clock)
-    r = 3 - w
-    δᵇ₋, δᵇ₊ = tangential_differences(radiation.previous_boundary, t, k, r)
-    δ₁₋, δ₁₊ = tangential_differences(radiation.previous_interior, t, k, r)
+    bounds = radiation.tangential_bounds
+    δᵇ₋, δᵇ₊ = tangential_differences(radiation.previous_boundary[3 - w], t, k, bounds)
+    δ₁₋, δ₁₊ = tangential_differences(radiation.previous_interior[3 - w], t, k, bounds)
     rₙ, rₜ, c, radiating = oblique_phase_speeds(φ₁ⁿ⁺¹, φ₂ⁿ⁺¹, φ₁ⁿ, δ₁₋, δ₁₊)
 
     r̄ₙ, r̄ₜ, c̄ = average_phase_speeds!(radiation, t, k, clock, rₙ, rₜ, c)
     φᵇⁿ⁺¹ = oblique_radiation_update(φᵇⁿ, φ₁ⁿ⁺¹, δᵇ₋, δᵇ₊, r̄ₙ, r̄ₜ, c̄, radiating, φᵉˣᵗ, Δt, radiation)
 
     @inbounds begin
-        radiation.previous_boundary[t, k, w] = φᵇⁿ⁺¹
-        radiation.previous_interior[t, k, w] = φ₁ⁿ⁺¹
+        radiation.previous_boundary[w][t, k] = φᵇⁿ⁺¹
+        radiation.previous_interior[w][t, k] = φ₁ⁿ⁺¹
     end
 
     return φᵇⁿ⁺¹
@@ -255,37 +289,46 @@ end
     r̄ₙ, r̄ₜ, c̄ = average_phase_speeds!(radiation, t, k, clock, (rₙ₋ + rₙ₊) / 2, (rₜ₋ + rₜ₊) / 2, (c₋ + c₊) / 2)
 
     w = written_buffer(clock)
-    δᵇ₋, δᵇ₊ = tangential_differences(radiation.previous_boundary, t, k, 3 - w)
+    δᵇ₋, δᵇ₊ = tangential_differences(radiation.previous_boundary[3 - w], t, k, radiation.tangential_bounds)
     φᵇⁿ⁺¹ = oblique_radiation_update(φᵇⁿ, φ₁ⁿ⁺¹, δᵇ₋, δᵇ₊, r̄ₙ, r̄ₜ, c̄, r̄ₙ > 0, φᵉˣᵗ, Δt, radiation)
 
     @inbounds begin
-        radiation.previous_boundary[t, k, w] = φᵇⁿ⁺¹
-        radiation.previous_interior[t, k, w] = φ₁ⁿ⁺¹
+        radiation.previous_boundary[w][t, k] = φᵇⁿ⁺¹
+        radiation.previous_interior[w][t, k] = φ₁ⁿ⁺¹
     end
 
     return φᵇⁿ⁺¹
 end
 
 # First and second interior values of a normal velocity next to the boundary, and its differences along the
-# boundary (zero beyond the ends).
-@inline function normal_neighbour_x(u, iᵢ, iᵢᵢ, j, k, Ny)
-    j = clamp(j, 1, Ny)
+# boundary (zero beyond the ends of the domain; at a rank edge the neighbours are in the halo).
+@inline function normal_neighbour_x(u, iᵢ, iᵢᵢ, j, k, (lower, upper))
+    j = clamp(j, lower, upper)
     @inbounds begin
         u₁ = u[iᵢ, j, k]
-        δ₋ = ifelse(j > 1,  u₁ - u[iᵢ, j - 1, k], zero(u₁))
-        δ₊ = ifelse(j < Ny, u[iᵢ, j + 1, k] - u₁, zero(u₁))
+        δ₋ = ifelse(j > lower, u₁ - u[iᵢ, max(j - 1, lower), k], zero(u₁))
+        δ₊ = ifelse(j < upper, u[iᵢ, min(j + 1, upper), k] - u₁, zero(u₁))
         return u₁, u[iᵢᵢ, j, k], δ₋, δ₊
     end
 end
 
-@inline function normal_neighbour_y(v, jᵢ, jᵢᵢ, i, k, Nx)
-    i = clamp(i, 1, Nx)
+@inline function normal_neighbour_y(v, jᵢ, jᵢᵢ, i, k, (lower, upper))
+    i = clamp(i, lower, upper)
     @inbounds begin
         v₁ = v[i, jᵢ, k]
-        δ₋ = ifelse(i > 1,  v₁ - v[i - 1, jᵢ, k], zero(v₁))
-        δ₊ = ifelse(i < Nx, v[i + 1, jᵢ, k] - v₁, zero(v₁))
+        δ₋ = ifelse(i > lower, v₁ - v[max(i - 1, lower), jᵢ, k], zero(v₁))
+        δ₊ = ifelse(i < upper, v[min(i + 1, upper), jᵢ, k] - v₁, zero(v₁))
         return v₁, v[i, jᵢᵢ, k], δ₋, δ₊
     end
+end
+
+# The range of normal-velocity points along a boundary in direction `dim` that a tangential velocity may read:
+# the interior, extended into the halo on a side with a neighbouring rank or a periodic end.
+@inline function normal_neighbour_bounds(grid, dim)
+    T = topology(grid, dim)
+    N = size(grid, dim)
+    H = halo_size(grid, dim)
+    return (ifelse(neighbour_on_left(T), 1 - H, 1), ifelse(neighbour_on_right(T), N + H, N))
 end
 
 @inline function radiate_tangential!(c, bᵢ, b₁, b₂, t, k, grid, bc, clock, model_fields, neighbours, closed)
@@ -323,15 +366,16 @@ const TangentialToY = Tuple{Face, Center, Center} # u on a north or south bounda
 @inline function _fill_east_halo!(j, k, grid, c, bc::OVBC, loc::TangentialToX, clock, model_fields)
     Nx, Ny = grid.Nx, grid.Ny
     u = model_fields.u
-    neighbours = (normal_neighbour_x(u, Nx, Nx - 1, j - 1, k, Ny), normal_neighbour_x(u, Nx, Nx - 1, j, k, Ny))
+    bounds = normal_neighbour_bounds(grid, 2)
+    neighbours = (normal_neighbour_x(u, Nx, Nx - 1, j - 1, k, bounds), normal_neighbour_x(u, Nx, Nx - 1, j, k, bounds))
     closed = immersed_peripheral_node(Nx, j, k, grid, Center(), Face(), Center())
     return radiate_tangential!(c, (Nx + 1, j, k), (Nx, j, k), (Nx - 1, j, k), j, k, grid, bc, clock, model_fields, neighbours, closed)
 end
 
 @inline function _fill_west_halo!(j, k, grid, c, bc::OVBC, loc::TangentialToX, clock, model_fields)
-    Ny = grid.Ny
     u = model_fields.u
-    neighbours = (normal_neighbour_x(u, 2, 3, j - 1, k, Ny), normal_neighbour_x(u, 2, 3, j, k, Ny))
+    bounds = normal_neighbour_bounds(grid, 2)
+    neighbours = (normal_neighbour_x(u, 2, 3, j - 1, k, bounds), normal_neighbour_x(u, 2, 3, j, k, bounds))
     closed = immersed_peripheral_node(1, j, k, grid, Center(), Face(), Center())
     return radiate_tangential!(c, (0, j, k), (1, j, k), (2, j, k), j, k, grid, bc, clock, model_fields, neighbours, closed)
 end
@@ -339,15 +383,21 @@ end
 @inline function _fill_north_halo!(i, k, grid, c, bc::OVBC, loc::TangentialToY, clock, model_fields)
     Nx, Ny = grid.Nx, grid.Ny
     v = model_fields.v
-    neighbours = (normal_neighbour_y(v, Ny, Ny - 1, i - 1, k, Nx), normal_neighbour_y(v, Ny, Ny - 1, i, k, Nx))
+    bounds = normal_neighbour_bounds(grid, 1)
+    neighbours = (normal_neighbour_y(v, Ny, Ny - 1, i - 1, k, bounds), normal_neighbour_y(v, Ny, Ny - 1, i, k, bounds))
     closed = immersed_peripheral_node(i, Ny, k, grid, Face(), Center(), Center())
     return radiate_tangential!(c, (i, Ny + 1, k), (i, Ny, k), (i, Ny - 1, k), i, k, grid, bc, clock, model_fields, neighbours, closed)
 end
 
 @inline function _fill_south_halo!(i, k, grid, c, bc::OVBC, loc::TangentialToY, clock, model_fields)
-    Nx = grid.Nx
     v = model_fields.v
-    neighbours = (normal_neighbour_y(v, 2, 3, i - 1, k, Nx), normal_neighbour_y(v, 2, 3, i, k, Nx))
+    bounds = normal_neighbour_bounds(grid, 1)
+    neighbours = (normal_neighbour_y(v, 2, 3, i - 1, k, bounds), normal_neighbour_y(v, 2, 3, i, k, bounds))
     closed = immersed_peripheral_node(i, 1, k, grid, Face(), Center(), Center())
     return radiate_tangential!(c, (i, 0, k), (i, 1, k), (i, 2, k), i, k, grid, bc, clock, model_fields, neighbours, closed)
 end
+
+# A tangential velocity with oblique radiation reads the normal velocity next to its boundary point, which at a rank
+# edge is in the halo: the normal velocity's halos must hold its current values when the tangential one is filled.
+reads_neighbouring_velocity(bcs::FieldBoundaryConditions) = any(bc -> bc isa OVBC, (bcs.west, bcs.east, bcs.south, bcs.north))
+reads_neighbouring_velocity(bcs) = false

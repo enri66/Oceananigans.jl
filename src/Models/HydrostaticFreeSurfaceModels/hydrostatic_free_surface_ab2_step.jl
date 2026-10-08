@@ -54,6 +54,7 @@ function hydrostatic_ab2_step!(model, free_surface, grid, Δt, callbacks)
 
     # Mask and fill velocity halos
     u, v, _ = model.velocities
+    fill_velocity_halos_read_by_boundary_conditions!(model.velocities)
     fill_halo_regions!((u, v), model.clock, fields(model); async=true)
 
     # Computing tracer tendencies
@@ -112,6 +113,7 @@ function hydrostatic_ab2_step!(model, free_surface::ImplicitFreeSurface, grid, �
     end
 
     u, v, _ = model.velocities
+    fill_velocity_halos_read_by_boundary_conditions!(model.velocities)
     fill_halo_regions!((u, v), model.clock, fields(model))
 
     @apply_regionally begin
@@ -160,7 +162,9 @@ function ab2_step_velocities!(velocities, model, Δt, χ)
     ab2_step_velocity!(model, Δt, χ, Val(:v))
 
     add_deferred_barotropic_acceleration!(velocities, model.grid, model.free_surface, Δt)
+    fill_halos_read_by_implicit_step!(velocities.v, velocities)
     implicit_ab2_step_velocity!(model, Δt, Val(:u))
+    fill_halos_read_by_implicit_step!(velocities.u, velocities)
     implicit_ab2_step_velocity!(model, Δt, Val(:v))
     add_deferred_barotropic_acceleration!(velocities, model.grid, model.free_surface, -Δt)
 

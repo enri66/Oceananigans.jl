@@ -138,6 +138,7 @@ function step_free_surface!(free_surface::ImplicitFreeSurface, model, timesteppe
         mask_immersed_field!(v)
     end
 
+    fill_velocity_halos_read_by_boundary_conditions!(model.velocities)
     fill_halo_regions!((u, v), model.clock, fields(model))
     @apply_regionally compute_implicit_free_surface_right_hand_side!(rhs, solver, g, Δt, model.velocities, η,
                                                                      model.forcing.η, model.clock, fields(model))
