@@ -79,6 +79,30 @@ function distributed_fill_halo_regions!(arch, c, boundary_conditions, indices, l
     return nothing
 end
 
+"""
+    fill_communicating_halos!(field)
+
+Exchange the halos of `field` with the neighbouring ranks, leaving the halos filled by its other boundary
+conditions as they are. Does nothing for a field that is not distributed.
+"""
+fill_communicating_halos!(field) = nothing
+
+function fill_communicating_halos!(field::DistributedField)
+    c, grid, buffers = field.data, field.grid, field.communication_buffers
+    arch = architecture(grid)
+    loc = instantiated_location(field)
+
+    wait_for_messages!(buffers)
+
+    kernels!, bcs = get_boundary_kernels(field.boundary_conditions, c, grid, loc, field.indices)
+    for (kernel!, bc) in zip(values(kernels!), values(bcs))
+        kernel! isa DistributedFillHalo && distributed_fill_halo_event!(c, kernel!, bc, loc, arch, grid, buffers, ())
+    end
+    fill_corners!(c, arch.connectivity, arch, grid, buffers)
+
+    return nothing
+end
+
 @inline distributed_fill_halo_events!(c, ::Tuple{}, ::Tuple{}, loc, arch, grid, buffers, args; kwargs...) = nothing
 
 @inline function distributed_fill_halo_events!(c, kernels!::Tuple, bcs::Tuple, loc, arch, grid, buffers, args; kwargs...)
