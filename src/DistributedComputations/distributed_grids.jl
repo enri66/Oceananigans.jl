@@ -321,15 +321,13 @@ end
 # We _HAVE_ to dispatch individually for all grid types because
 # `RectilinearGrid`, `LatitudeLongitudeGrid` and `ImmersedBoundaryGrid`
 # take precedence on `DistributedGrid`
-function with_halo(new_halo, grid::DistributedRectilinearGrid)
-    new_grid = with_halo(new_halo, reconstruct_global_grid(grid))
-    return scatter_local_grids(new_grid, architecture(grid), size(grid))
-end
+# The new grid is built from the extents of the grid of the whole domain, as `with_halo` does for that grid, rather than
+# from a copy of it with the new halo, whose extents can differ from them in the last bit.
+with_halo(new_halo, grid::DistributedRectilinearGrid) =
+    scatter_local_grids(reconstruct_global_grid(grid), architecture(grid), size(grid); halo = new_halo)
 
-function with_halo(new_halo, grid::DistributedLatitudeLongitudeGrid)
-    new_grid = with_halo(new_halo, reconstruct_global_grid(grid))
-    return scatter_local_grids(new_grid, architecture(grid), size(grid))
-end
+with_halo(new_halo, grid::DistributedLatitudeLongitudeGrid) =
+    scatter_local_grids(reconstruct_global_grid(grid), architecture(grid), size(grid); halo = new_halo)
 
 # Extending child_architecture for grids
 child_architecture(grid::AbstractGrid) = architecture(grid)
@@ -352,15 +350,17 @@ function scatter_grid_properties(global_grid)
     return x, y, z, topo, halo
 end
 
-function scatter_local_grids(global_grid::RectilinearGrid, arch::Distributed, local_size)
-    x, y, z, topo, halo = scatter_grid_properties(global_grid)
+function scatter_local_grids(global_grid::RectilinearGrid, arch::Distributed, local_size; halo = nothing)
+    x, y, z, topo, global_halo = scatter_grid_properties(global_grid)
+    halo = isnothing(halo) ? global_halo : pop_flat_elements(halo, topo)
     global_sz = global_size(arch, local_size)
     global_sz = pop_flat_elements(global_sz, topo)
     return RectilinearGrid(arch, eltype(global_grid); size=global_sz, x=x, y=y, z=z, halo=halo, topology=topo)
 end
 
-function scatter_local_grids(global_grid::LatitudeLongitudeGrid, arch::Distributed, local_size)
-    x, y, z, topo, halo = scatter_grid_properties(global_grid)
+function scatter_local_grids(global_grid::LatitudeLongitudeGrid, arch::Distributed, local_size; halo = nothing)
+    x, y, z, topo, global_halo = scatter_grid_properties(global_grid)
+    halo = isnothing(halo) ? global_halo : pop_flat_elements(halo, topo)
     global_sz = global_size(arch, local_size)
     global_sz = pop_flat_elements(global_sz, topo)
     return LatitudeLongitudeGrid(arch, eltype(global_grid); size=global_sz, longitude=x,
