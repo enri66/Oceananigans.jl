@@ -60,6 +60,31 @@ function partition_coordinate(c::AbstractVector, n, arch, dim)
     return c[start_idx:end_idx]
 end
 
+"""
+    PartitionedInterval(interval, N, offset, topology, H)
+
+The part of a regular coordinate that starts `offset` cells into the whole coordinate, which spans `interval` with `N`
+cells, the `topology` and the halo `H` of the grid of the whole domain.
+"""
+struct PartitionedInterval{C, T}
+    interval :: C
+    N :: Int
+    offset :: Int
+    topology :: T
+    H :: Int
+end
+
+# The part of a regular coordinate held by this rank, described by the whole coordinate so that the rank's nodes are
+# those of the whole grid
+function partition_grid_coordinate(c::Tuple, n, arch, dim, topology, H)
+    nl = concatenate_local_sizes(n, arch, dim)
+    r  = arch.local_index[dim]
+    topology = topology isa Type ? topology() : topology
+    return PartitionedInterval(c, sum(nl), sum(nl[1:r-1]), topology, H)
+end
+
+partition_grid_coordinate(c, n, arch, dim, topology, H) = partition_coordinate(c, n, arch, dim)
+
 function partition_coordinate(c::Tuple, n, arch, dim)
     nl = concatenate_local_sizes(n, arch, dim)
     N  = sum(nl)

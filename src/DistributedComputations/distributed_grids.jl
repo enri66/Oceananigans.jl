@@ -7,11 +7,42 @@ using Oceananigans.Grids: AbstractGrid, topology, size, halo_size, architecture,
                           generate_coordinate, with_precomputed_metrics,
                           cpu_face_constructor_x, cpu_face_constructor_y, cpu_face_constructor_z,
                           metrics_precomputed, constructor_arguments
+using Oceananigans.Grids: AbstractTopology, StaticVerticalDiscretization, total_extent, total_length
 using Oceananigans.Utils: getnamewrapper
 
 
 import Oceananigans.Grids: RectilinearGrid, LatitudeLongitudeGrid,
-                           with_halo, with_number_type, size_summary
+                           with_halo, with_number_type, size_summary, generate_coordinate
+
+# This rank's part of a regular coordinate. The nodes are those of the coordinate the grid of the whole domain has
+# (`generate_coordinate` with the whole interval, its topology and the grid's halo), evaluated at this rank's indices,
+# so they do not differ from them in the last bits; a halo wider than the grid's takes nodes beyond that range's ends.
+function generate_coordinate(FT, topo::AbstractTopology, n, H, p::PartitionedInterval, coordinate_name, arch)
+    c₁, c₂ = @. BigFloat(p.interval)
+    L = c₂ - c₁
+    Δ = L / p.N
+
+    F₋ = c₁ - p.H * Δ
+    F₊ = F₋ + total_extent(p.topology, p.H, Δ, L)
+    C₋ = F₋ + Δ / 2
+    C₊ = C₋ + L + Δ * (2p.H - 1)
+
+    whole_F = range(FT(F₋), FT(F₊), length = total_length(Face(),   p.topology, p.N, p.H))
+    whole_C = range(FT(C₋), FT(C₊), length = total_length(Center(), p.topology, p.N, p.H))
+
+    s = p.offset + p.H - H # index in the whole coordinate before this rank's first one
+    F = [Base.unsafe_getindex(whole_F, s + i) for i in 1:total_length(Face(),   topo, n, H)]
+    C = [Base.unsafe_getindex(whole_C, s + i) for i in 1:total_length(Center(), topo, n, H)]
+
+    F = OffsetArray(on_architecture(arch, F), -H)
+    C = OffsetArray(on_architecture(arch, C), -H)
+
+    if coordinate_name == :z
+        return FT(n * Δ), StaticVerticalDiscretization(F, C, FT(Δ), FT(Δ))
+    else
+        return FT(n * Δ), F, C, FT(Δ), FT(Δ)
+    end
+end
 
 const DistributedGrid{FT, TX, TY, TZ} = Union{
     AbstractGrid{FT, TX, TY, TZ, <:Distributed{<:CPU}},
@@ -101,9 +132,9 @@ function RectilinearGrid(arch::Distributed,
 
     local_topo = (TX, TY, TZ)
 
-    xl = Rx == 1 ? x : partition_coordinate(x, nx, arch, 1)
-    yl = Ry == 1 ? y : partition_coordinate(y, ny, arch, 2)
-    zl = Rz == 1 ? z : partition_coordinate(z, nz, arch, 3)
+    xl = Rx == 1 ? x : partition_grid_coordinate(x, nx, arch, 1, topology[1], Hx)
+    yl = Ry == 1 ? y : partition_grid_coordinate(y, ny, arch, 2, topology[2], Hy)
+    zl = Rz == 1 ? z : partition_grid_coordinate(z, nz, arch, 3, topology[3], Hz)
 
     Lx, xᶠᵃᵃ, xᶜᵃᵃ, Δxᶠᵃᵃ, Δxᶜᵃᵃ = generate_coordinate(FT, local_topo, local_sz, halo, xl, :x, 1, child_architecture(arch))
     Ly, yᵃᶠᵃ, yᵃᶜᵃ, Δyᵃᶠᵃ, Δyᵃᶜᵃ = generate_coordinate(FT, local_topo, local_sz, halo, yl, :y, 2, child_architecture(arch))
@@ -150,9 +181,11 @@ function LatitudeLongitudeGrid(arch::Distributed,
 
     local_topo = (TX, TY, TZ)
 
-    λl = Rx == 1 ? longitude : partition_coordinate(longitude, nλ, arch, 1)
-    φl = Ry == 1 ? latitude  : partition_coordinate(latitude,  nφ, arch, 2)
-    zl = Rz == 1 ? z         : partition_coordinate(z,         nz, arch, 3)
+    λl = Rx == 1 ? longitude : partition_grid_coordinate(longitude, nλ, arch, 1, topology[1], Hλ)
+    # The latitude is generated with one more halo than the grid's (see below), so even when it is not partitioned
+    # it takes the nodes of the coordinate a grid of the whole domain has
+    φl = partition_grid_coordinate(latitude, nφ, arch, 2, topology[2], Hφ)
+    zl = Rz == 1 ? z         : partition_grid_coordinate(z,         nz, arch, 3, topology[3], Hz)
 
     # Calculate all direction (which might be stretched)
     # A direction is regular if the domain passed is a Tuple{<:Real, <:Real},
