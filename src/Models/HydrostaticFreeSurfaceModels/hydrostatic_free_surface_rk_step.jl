@@ -1,5 +1,5 @@
 using Oceananigans.TurbulenceClosures: implicit_step!
-using Oceananigans.BoundaryConditions: needs_implicit_solver
+using Oceananigans.BoundaryConditions: needs_implicit_solver, reads_neighbouring_velocity
 using Oceananigans.DistributedComputations: fill_communicating_halos!
 using Oceananigans.ImmersedBoundaries: peripheral_node, MutableGridOfSomeKind
 
@@ -50,6 +50,7 @@ The order of operations for explicit free surfaces is:
     @apply_regionally compute_transport_velocities!(model, free_surface)
 
     u, v, _ = model.velocities
+    fill_velocity_halos_read_by_boundary_conditions!(model.velocities)
     fill_halo_regions!((u, v), model.clock, fields(model); async=true)
 
     @apply_regionally begin
@@ -104,6 +105,7 @@ For implicit free surfaces, a predictor-corrector approach is used:
 
     # Fill velocity halos
     u, v, _ = model.velocities
+    fill_velocity_halos_read_by_boundary_conditions!(model.velocities)
     fill_halo_regions!((u, v), model.clock, fields(model))
 
     @apply_regionally begin
@@ -159,6 +161,16 @@ function rk_substep_velocities!(velocities, model, Δt)
     implicit_substep_velocity!(model, Δt, Val(:v))
     add_deferred_barotropic_acceleration!(velocities, model.grid, model.free_surface, -Δt)
 
+    return nothing
+end
+
+# An open boundary condition on one velocity component can read the other component next to its boundary point, which
+# at a rank edge is in the halo: exchange both before filling their halos, so that it reads their current values.
+function fill_velocity_halos_read_by_boundary_conditions!(velocities)
+    u, v = velocities.u, velocities.v
+    reads_neighbouring_velocity(u.boundary_conditions) | reads_neighbouring_velocity(v.boundary_conditions) || return nothing
+    fill_communicating_halos!(u)
+    fill_communicating_halos!(v)
     return nothing
 end
 

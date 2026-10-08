@@ -33,6 +33,25 @@ const AAC = Tuple{Any, Any, Center}
 
 @inline record_anchor!(anchors, t, k, ::Nothing, anchored, first_call) = nothing
 
+# Whether a neighbouring rank (or the other end of a periodic domain) lies to the left or the right along a direction
+neighbour_on_left(::Type{<:Union{Grids.Periodic, LeftConnected, FullyConnected}}) = true
+neighbour_on_left(T) = false
+neighbour_on_right(::Type{<:Union{Grids.Periodic, RightConnected, FullyConnected}}) = true
+neighbour_on_right(T) = false
+
+"""
+    boundary_state_field(grid, loc, dim)
+
+A field on `grid` at the location `loc` of a boundary-conditioned field, reduced in the direction `dim` normal to the
+boundary, to hold state that an open boundary scheme keeps along that boundary. Defined in `Fields`.
+"""
+function boundary_state_field end
+
+# The values of a field reduced in direction `dim`, indexed along the boundary and in the other direction
+along_boundary(f, dim) = dim == 1 ? view(f.data, 1, :, :) :
+                         dim == 2 ? view(f.data, :, 1, :) :
+                                    view(f.data, :, :, 1)
+
 # A `target_transport` is `nothing`, a fixed transport, or a callable of the grid (kept as is).
 convert_target_transport(FT, ::Nothing) = nothing
 convert_target_transport(FT, target_transport::Number) = convert(FT, target_transport)
