@@ -1,7 +1,7 @@
 using Oceananigans.TurbulenceClosures: implicit_step!
 using Oceananigans: boundary_conditions
 using Oceananigans.BoundaryConditions: needs_implicit_solver, reads_neighbouring_velocity
-using Oceananigans.DistributedComputations: fill_communicating_halos!
+using Oceananigans.DistributedComputations: fill_communicating_halos!, all_reduce
 using Oceananigans.ImmersedBoundaries: peripheral_node, MutableGridOfSomeKind
 
 import Oceananigans.TimeSteppers: rk_substep!, cache_current_fields!
@@ -167,9 +167,12 @@ end
 
 # An open boundary condition on one velocity component can read the other component next to its boundary point, which
 # at a rank edge is in the halo: exchange both before filling their halos, so that it reads their current values.
+# Every rank takes part in the exchange when any rank has such a condition, so that ranks away from the boundary post
+# the messages their neighbours wait for.
 function fill_velocity_halos_read_by_boundary_conditions!(velocities)
     u, v = velocities.u, velocities.v
-    reads_neighbouring_velocity(boundary_conditions(u)) | reads_neighbouring_velocity(boundary_conditions(v)) || return nothing
+    reads = reads_neighbouring_velocity(boundary_conditions(u)) | reads_neighbouring_velocity(boundary_conditions(v))
+    all_reduce(|, reads, architecture(u)) || return nothing
     fill_communicating_halos!(u)
     fill_communicating_halos!(v)
     return nothing
