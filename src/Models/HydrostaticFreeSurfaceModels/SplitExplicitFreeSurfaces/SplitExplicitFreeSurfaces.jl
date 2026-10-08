@@ -12,6 +12,7 @@ using Oceananigans.Operators: Az⁻¹ᶜᶜᶠ, Δx_qᶜᶠᶠ, Δy_qᶠᶜᶠ, 
 using Oceananigans.ImmersedBoundaries: column_depthTᶠᶜᵃ, column_depthTᶜᶠᵃ, column_depthᶠᶜᵃ, column_depthᶜᶠᵃ
 using Oceananigans.Operators: ∂xᵣTᶠᶜᶠ, ∂xᵣᶠᶜᶠ, ∂yᵣTᶜᶠᶠ, ∂yᵣᶜᶠᶠ, δxTᶜᵃᵃ, δyTᵃᶜᵃ, δxᶜᶜᶜ, δyᶜᶜᶜ
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions, SurfaceWaveRadiationBoundaryCondition, gravity_wave_boundary_condition
+using Oceananigans.BoundaryConditions: BoundaryCondition, Flux, Gradient, Value, NormalFlow
 using Oceananigans.BoundaryConditions: GWNFBC, IGWVBC, _fill_only_south_halo!, _fill_only_north_halo!, _fill_only_west_halo!, _fill_only_east_halo!
 using Oceananigans.Fields: Field, instantiated_location
 using Oceananigans.Grids: Center, Face, topology, halo_size, column_depthᶜᶠᵃ, column_depthᶠᶜᵃ,

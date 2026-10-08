@@ -262,6 +262,8 @@ end
 refill_in_halo(bc) = false
 refill_in_halo(::GWNFBC) = true
 refill_in_halo(::IGWVBC) = true
+# Walls, which a rank whose halo lies along them fills only over its interior
+refill_in_halo(::BoundaryCondition{<:Union{Flux, Gradient, Value{Nothing}, NormalFlow{Nothing}}, <:Union{Nothing, Number}}) = true
 
 function refill_side!(field, bc, kernel!, range, k, loc, grid, args)
     (refill_in_halo(bc) && !isempty(range)) || return nothing
