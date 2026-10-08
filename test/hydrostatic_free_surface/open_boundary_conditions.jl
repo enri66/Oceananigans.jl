@@ -3,7 +3,7 @@ include(joinpath(@__DIR__, "..", "setup", "dependencies_for_runtests.jl"))
 using Oceananigans
 using Oceananigans.BoundaryConditions: GravityWaveRadiation, NormalRadiation, GravityWaveRadiationBoundaryCondition, SurfaceWaveRadiationBoundaryCondition, fill_halo_regions!
 using Oceananigans.BoundaryConditions: ObliqueRadiation, oblique_radiation_update, oblique_phase_speeds,
-                                       tangential_radiation_update, radiation_buffers, radiation_storage
+                                       tangential_radiation_update, materialize_radiation_storage
 using Oceananigans.BoundaryConditions: TracerReservoir, reservoir_update
 using Oceananigans.Units
 using Oceananigans.MultiRegion: MultiRegionGrid, XPartition
@@ -543,8 +543,9 @@ end
 # velocity itself is steady, so it only radiates when the phase speed comes from the normal velocity.
 function test_oblique_tangential_uses_normal_phase_speed()
     clock = (; stage = 1, last_stage_Δt = 10.0, iteration = 1)
-    materialize(weight) = radiation_storage(ObliqueRadiation(inflow_timescale = Inf, phase_speed_weight = weight),
-                                            radiation_buffers(ObliqueRadiation(), CPU(), Float64, (3, 1)))
+    grid = RectilinearGrid(size = (3, 3, 1), extent = (1, 1, 1), topology = (Bounded, Bounded, Bounded))
+    materialize(weight) = materialize_radiation_storage(ObliqueRadiation(inflow_timescale = Inf, phase_speed_weight = weight),
+                                                        grid, (Face(), Center(), Center()), 2)
     φᵇ, φ₁, φ₂, φᵉˣᵗ = 0.2, 0.9, 0.5, -0.3
     # normal velocity next to the boundary: previous interior value 0 (fresh buffers), now -1, second interior -2,
     # so its phase speed points out of the domain

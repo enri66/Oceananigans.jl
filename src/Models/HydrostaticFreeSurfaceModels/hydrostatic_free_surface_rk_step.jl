@@ -1,4 +1,5 @@
 using Oceananigans.TurbulenceClosures: implicit_step!
+using Oceananigans: boundary_conditions
 using Oceananigans.BoundaryConditions: needs_implicit_solver, reads_neighbouring_velocity
 using Oceananigans.DistributedComputations: fill_communicating_halos!
 using Oceananigans.ImmersedBoundaries: peripheral_node, MutableGridOfSomeKind
@@ -168,7 +169,7 @@ end
 # at a rank edge is in the halo: exchange both before filling their halos, so that it reads their current values.
 function fill_velocity_halos_read_by_boundary_conditions!(velocities)
     u, v = velocities.u, velocities.v
-    reads_neighbouring_velocity(u.boundary_conditions) | reads_neighbouring_velocity(v.boundary_conditions) || return nothing
+    reads_neighbouring_velocity(boundary_conditions(u)) | reads_neighbouring_velocity(boundary_conditions(v)) || return nothing
     fill_communicating_halos!(u)
     fill_communicating_halos!(v)
     return nothing
