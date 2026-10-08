@@ -113,6 +113,22 @@ function extend_node_interval(::RightCenterFolded, N, node_interval::Tuple{<:Num
     return (c₁ - Δ/2, c₂ + Δ/2)
 end
 
+"""
+    regular_nodes(FT, first, last, n, Δ, H, total)
+
+`total` regularly spaced nodes, of which nodes `H + 1` to `H + n` are those of `range(first, last, length = n)` and the
+others extend it by `H` nodes before `first`. The interior nodes, including their ends, do not depend on the halo.
+"""
+function regular_nodes(FT, first, last, n, Δ, H, total)
+    if n > 1
+        interior = range(FT(first), FT(last), length = n)
+        return StepRangeLen{FT}(interior.ref, interior.step, total, interior.offset + H)
+    else
+        P = typeof(range(FT(0), FT(1), length = 2).step)
+        return StepRangeLen{FT}(P(first), P(Δ), total, H + 1)
+    end
+end
+
 # Generate a regularly-spaced coordinate passing the domain extent (2-tuple) and number of points
 function generate_coordinate(FT, topo::AT, N, H, node_interval::Tuple{<:Number, <:Number}, coordinate_name, arch)
 
@@ -130,17 +146,11 @@ function generate_coordinate(FT, topo::AT, N, H, node_interval::Tuple{<:Number, 
     # Convert to get the correct type also when using single precision
     Δᶠ = Δᶜ = Δ = L / N
 
-    F₋ = c₁ - H * Δ
-    F₊ = F₋ + total_extent(topo, H, Δ, L)
-
-    C₋ = F₋ + Δ / 2
-    C₊ = C₋ + L + Δ * (2H - 1)
-
     TF = total_length(Face(),   topo, N, H)
     TC = total_length(Center(), topo, N, H)
 
-    F = range(FT(F₋), FT(F₊), length = TF)
-    C = range(FT(C₋), FT(C₊), length = TC)
+    F = regular_nodes(FT, c₁,         c₂,         N + 1, Δ, H, TF)
+    C = regular_nodes(FT, c₁ + Δ / 2, c₂ - Δ / 2, N,     Δ, H, TC)
 
     F = on_architecture(arch, F)
     C = on_architecture(arch, C)
