@@ -59,7 +59,7 @@ NormalRadiation{Float64}
 ├── inflow_timescale: 86400.0
 ├── outflow_timescale: 3.1104e7
 ├── use_boundary_velocity: false
-└── target_transport: Nothing
+└── target_transport: nothing
 ```
 """
 struct NormalRadiation{FT, S, A, TF} <: AbstractRadiationScheme{FT}
@@ -123,13 +123,14 @@ const RBC   = Union{RVBC, RNFBC}
 function materialize_radiation_storage(radiation::AbstractRadiationScheme, grid, loc, dim)
     FT = eltype(grid)
     Sx, Sy, Sz = size(grid, loc) # loc-aware: Face on Bounded gives N+1, matching the kernel range
+    Hx, Hy, _ = halo_size(grid)
     arch = architecture(grid)
 
-    tangential_size = dim == 1 ? (Sy, Sz) :
-                      dim == 2 ? (Sx, Sz) :
-                                 (Sx, Sy)
+    tangential_ranges = dim == 1 ? (connected_range(loc[2], topology(grid, 2), Sy, Hy), 1:Sz) :
+                        dim == 2 ? (connected_range(loc[1], topology(grid, 1), Sx, Hx), 1:Sz) :
+                                   (1:Sx, 1:Sy)
 
-    buffers = radiation_buffers(radiation, arch, FT, tangential_size)
+    buffers = radiation_buffers(radiation, arch, FT, tangential_ranges)
     return radiation_storage(radiation, buffers)
 end
 
@@ -141,8 +142,8 @@ radiation_buffers(radiation::AbstractRadiationScheme, arch, FT, tangential_size)
 radiation_buffers(radiation::AbstractRadiationScheme) = (radiation.φᵇ, radiation.φ₁, radiation.φ₁ˡ, radiation.anchors)
 
 radiation_storage(radiation::AbstractRadiationScheme, (φᵇ, φ₁, φ₁ˡ, anchors)) =
-    getnamewrapper(radiation)(radiation.outflow_timescale, radiation.inflow_timescale,
-                              radiation.use_boundary_velocity, φᵇ, φ₁, φ₁ˡ, anchors)
+    unparameterized_type(typeof(radiation))(radiation.outflow_timescale, radiation.inflow_timescale,
+                                            radiation.use_boundary_velocity, φᵇ, φ₁, φ₁ˡ, anchors)
 
 radiation_storage(radiation::NormalRadiation, (φᵇ, φ₁, φ₁ˡ, anchors)) =
     NormalRadiation(radiation.outflow_timescale, radiation.inflow_timescale, radiation.use_boundary_velocity,
