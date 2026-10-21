@@ -135,15 +135,21 @@ function materialize_radiation_storage(radiation::ObliqueRadiation, grid, loc, d
     FT = eltype(grid)
     arch = architecture(grid)
     Sx, Sy, Sz = size(grid, loc)
+    Hx, Hy, _ = halo_size(grid)
 
     tangential_size = dim == 1 ? (Sy, Sz) :
                       dim == 2 ? (Sx, Sz) :
                                  (Sx, Sy)
 
-    φᵇ, φ₁, φ₁ˡ = ntuple(_ -> zeros(arch, FT, tangential_size...), 3)
-    rₙ, rₜ, c = ntuple(_ -> zeros(arch, FT, tangential_size..., 2), 3)
-    normal_interior = zeros(arch, FT, tangential_size..., 4)
-    anchors = anchor_buffer(arch, map(n -> 1:n, tangential_size)...)
+    # The fills run over the tangential range of the connected halos, as the extended split-explicit halos need
+    tangential_ranges = dim == 1 ? (connected_range(loc[2], topology(grid, 2), Sy, Hy), 1:Sz) :
+                        dim == 2 ? (connected_range(loc[1], topology(grid, 1), Sx, Hx), 1:Sz) :
+                                   (1:Sx, 1:Sy)
+
+    φᵇ, φ₁, φ₁ˡ = ntuple(_ -> radiation_buffer(arch, FT, tangential_ranges...), 3)
+    rₙ, rₜ, c = ntuple(_ -> radiation_buffer(arch, FT, tangential_ranges..., 1:2), 3)
+    normal_interior = radiation_buffer(arch, FT, tangential_ranges..., 1:4)
+    anchors = anchor_buffer(arch, tangential_ranges...)
 
     state_fields = ntuple(_ -> boundary_state_field(grid, loc, dim), 4)
     previous_boundary = map(f -> along_boundary(f, dim), state_fields[1:2])
