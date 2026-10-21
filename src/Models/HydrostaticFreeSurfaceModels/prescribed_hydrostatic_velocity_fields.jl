@@ -22,6 +22,9 @@ struct PrescribedVelocityFields{U, V, W, P}
     parameters :: P
 end
 
+# Prescribed velocities have no boundary conditions to read them
+fill_velocity_halos_read_by_boundary_conditions!(::PrescribedVelocityFields) = nothing
+
 @inline Base.getindex(U::PrescribedVelocityFields, i) = getindex((u=U.u, v=U.v, w=U.w), i)
 
 """

@@ -134,10 +134,12 @@ function materialize_radiation_storage(radiation::AbstractRadiationScheme, grid,
     return radiation_storage(radiation, buffers)
 end
 
-anchor_buffer(arch, tangential_size) = fill!(zeros(arch, Int, tangential_size...), -1)
+radiation_buffer(arch, FT, ranges...) = OffsetArray(zeros(arch, FT, map(length, ranges)...), map(r -> first(r) - 1, ranges)...)
 
-radiation_buffers(radiation::AbstractRadiationScheme, arch, FT, tangential_size) =
-    (ntuple(_ -> zeros(arch, FT, tangential_size...), 3)..., anchor_buffer(arch, tangential_size)) # φᵇ, φ₁, φ₁ˡ, anchors
+anchor_buffer(arch, ranges...) = fill!(radiation_buffer(arch, Int, ranges...), -1)
+
+radiation_buffers(radiation::AbstractRadiationScheme, arch, FT, tangential_ranges) =
+    (ntuple(_ -> radiation_buffer(arch, FT, tangential_ranges...), 3)..., anchor_buffer(arch, tangential_ranges...)) # φᵇ, φ₁, φ₁ˡ, anchors
 
 radiation_buffers(radiation::AbstractRadiationScheme) = (radiation.φᵇ, radiation.φ₁, radiation.φ₁ˡ, radiation.anchors)
 

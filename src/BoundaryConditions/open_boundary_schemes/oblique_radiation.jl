@@ -143,7 +143,7 @@ function materialize_radiation_storage(radiation::ObliqueRadiation, grid, loc, d
     φᵇ, φ₁, φ₁ˡ = ntuple(_ -> zeros(arch, FT, tangential_size...), 3)
     rₙ, rₜ, c = ntuple(_ -> zeros(arch, FT, tangential_size..., 2), 3)
     normal_interior = zeros(arch, FT, tangential_size..., 4)
-    anchors = anchor_buffer(arch, tangential_size)
+    anchors = anchor_buffer(arch, map(n -> 1:n, tangential_size)...)
 
     state_fields = ntuple(_ -> boundary_state_field(grid, loc, dim), 4)
     previous_boundary = map(f -> along_boundary(f, dim), state_fields[1:2])
