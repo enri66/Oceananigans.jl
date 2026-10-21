@@ -22,7 +22,12 @@ export
 using Adapt: Adapt
 using Base: Callable
 using DocStringExtensions: TYPEDSIGNATURES
-using MuladdMacro: @muladd
+# Fork-only: `@muladd` leaves it to the compiler whether to fuse a multiply and an add, and on the CPU the kernel
+# specializations of different rank layouts can fuse differently, which changes the last bit of a few cells (the
+# bounds-preserving limiter amplifies it). Plain arithmetic keeps the layouts bit-identical.
+macro muladd(ex)
+    return esc(ex)
+end
 using OffsetArrays: OffsetArray
 
 using Oceananigans: Oceananigans, fully_supported_float_types
