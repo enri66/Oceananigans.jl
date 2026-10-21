@@ -156,7 +156,8 @@ for buffer in advection_buffers[2:end] # WENO{<:Any, 1} does not exist
 
             where ``dᵢ`` is computed from the function `coeff_p`
             """
-            @inline biased_p(scheme::WENO{$buffer}, ::Val{$stencil}, δ) = @inbounds sum(coeff_p(scheme, Val($stencil)) .* δ)
+            @inline biased_p(scheme::WENO{$buffer}, ::Val{$stencil}, δ) =
+                @inbounds @muladd $(Expr(:call, :+, (:(coeff_p(scheme, Val($stencil))[$i] * δ[$i]) for i in 1:buffer-1)...))
         end
     end
 end
@@ -380,7 +381,7 @@ end
 end
 
 # 1 + r², fused
-@inline zweno_ratio_term(r) = 1 + r^2
+@inline zweno_ratio_term(r) = muladd(r, r, 1)
 
 @inline zweno_regularization(scheme, τ) = ϵ
 
@@ -399,9 +400,9 @@ end
 # Global smoothness indicator τ₂ᵣ₋₁ from "Accuracy of the weighted essentially non-oscillatory conservative finite difference schemes", Don & Borges, 2013
 @inline global_smoothness_indicator(::Val{2}, β) = @inbounds abs(β[1] - β[2])
 @inline global_smoothness_indicator(::Val{3}, β) = @inbounds abs(β[1] - β[3])
-@inline global_smoothness_indicator(::Val{4}, β) = @inbounds abs(β[1] +  3β[2] -   3β[3] -    β[4])
-@inline global_smoothness_indicator(::Val{5}, β) = @inbounds abs(β[1] +  2β[2] -   6β[3] +   2β[4] + β[5])
-@inline global_smoothness_indicator(::Val{6}, β) = @inbounds abs(β[1] + 36β[2] + 135β[3] - 135β[4] - 36β[5] - β[6])
+@inline global_smoothness_indicator(::Val{4}, β) = @inbounds @muladd abs(β[1] +  3β[2] -   3β[3] -    β[4])
+@inline global_smoothness_indicator(::Val{5}, β) = @inbounds @muladd abs(β[1] +  2β[2] -   6β[3] +   2β[4] + β[5])
+@inline global_smoothness_indicator(::Val{6}, β) = @inbounds @muladd abs(β[1] + 36β[2] + 135β[3] - 135β[4] - 36β[5] - β[6])
 
 # 1 / ∑α. Ordinary division by default: the approximate reciprocal slows the Float64 tracer kernels on CUDA.
 @inline function weight_normalization(scheme, α)

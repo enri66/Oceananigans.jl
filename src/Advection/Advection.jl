@@ -22,11 +22,26 @@ export
 using Adapt: Adapt
 using Base: Callable
 using DocStringExtensions: TYPEDSIGNATURES
-# Fork-only: `@muladd` leaves it to the compiler whether to fuse a multiply and an add, and on the CPU the kernel
-# specializations of different rank layouts can fuse differently, which changes the last bit of a few cells (the
-# bounds-preserving limiter amplifies it). Plain arithmetic keeps the layouts bit-identical.
+import MuladdMacro
+using BFloat16s: BFloat16
+
+# Fork-only (CliMA/Oceananigans.jl#6296): `@muladd` as MuladdMacro writes it, but with every `muladd` replaced by a fused
+# multiply-add that always fuses. `muladd` leaves it to the compiler whether to fuse, so two specializations of the same
+# kernel (for example the single-rank and the y-split grid) can round differently on the CPU; `fma` rounds once and gives
+# the same result everywhere. BFloat16 has no `fma`, so it fuses in Float32.
+@inline fused_multiply_add(a, b, c) = fused_multiply_add(promote(a, b, c)...)
+@inline fused_multiply_add(a::T, b::T, c::T) where T = fma(a, b, c)
+@inline fused_multiply_add(a::BFloat16, b::BFloat16, c::BFloat16) = BFloat16(fma(Float32(a), Float32(b), Float32(c)))
+
+fma_expr(x) = x
+fma_expr(x::Symbol) = x === :muladd ? GlobalRef(@__MODULE__, :fused_multiply_add) : x
+fma_expr(x::Function) = x === Base.muladd ? fused_multiply_add : x
+fma_expr(x::GlobalRef) = x.name === :muladd ? GlobalRef(@__MODULE__, :fused_multiply_add) : x
+fma_expr(ex::Expr) = Expr(ex.head, map(fma_expr, ex.args)...)
+
 macro muladd(ex)
-    return esc(ex)
+    expanded = macroexpand(__module__, Expr(:macrocall, GlobalRef(MuladdMacro, Symbol("@muladd")), __source__, ex))
+    return esc(fma_expr(expanded))
 end
 using OffsetArrays: OffsetArray
 
