@@ -372,3 +372,25 @@ default_prognostic_bc(grid::LatitudeLongitudeGrid{<:Any, <:Any, Flat}, ::Val{:no
 default_prognostic_bc(grid::LatitudeLongitudeGrid{<:Any, <:Any, Flat}, ::Val{:south}, loc, default) = default
  default_auxiliary_bc(grid::LatitudeLongitudeGrid{<:Any, <:Any, Flat}, ::Val{:north}, loc) = nothing
  default_auxiliary_bc(grid::LatitudeLongitudeGrid{<:Any, <:Any, Flat}, ::Val{:south}, loc) = nothing
+
+#####
+##### Checkpointing
+#####
+
+function boundary_state(bcs::FieldBoundaryConditions)
+    state = (west   = boundary_state(bcs.west),
+             east   = boundary_state(bcs.east),
+             south  = boundary_state(bcs.south),
+             north  = boundary_state(bcs.north),
+             bottom = boundary_state(bcs.bottom),
+             top    = boundary_state(bcs.top))
+
+    return all(isnothing, state) ? nothing : state
+end
+
+function restore_boundary_state!(bcs::FieldBoundaryConditions, state::NamedTuple)
+    for side in keys(state)
+        restore_boundary_state!(getproperty(bcs, side), state[side])
+    end
+    return nothing
+end

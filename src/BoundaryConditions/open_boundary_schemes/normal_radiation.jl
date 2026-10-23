@@ -142,6 +142,15 @@ radiation_storage(radiation::NormalRadiation, (φᵇ, φ₁, φ₁ˡ)) =
     NormalRadiation(radiation.outflow_timescale, radiation.inflow_timescale, radiation.use_boundary_velocity,
                     φᵇ, φ₁, φ₁ˡ, radiation.target_transport)
 
+radiation_arrays(radiation::NormalRadiation) = (; φᵇ = radiation.φᵇ, φ₁ = radiation.φ₁, φ₁ˡ = radiation.φ₁ˡ)
+
+boundary_state(radiation::AbstractRadiationScheme) = map(a -> on_architecture(CPU(), a), radiation_arrays(radiation))
+
+restore_boundary_state!(radiation::AbstractRadiationScheme, state) =
+    foreach(copyto!, radiation_arrays(radiation), state)
+
+restore_boundary_state!(::AbstractRadiationScheme, ::Nothing) = nothing
+
 rebuild_classification(::Value, scheme) = Value(scheme)
 rebuild_classification(::NormalFlow, scheme) = NormalFlow(scheme)
 
