@@ -145,3 +145,13 @@ end
 
     return φᵇⁿ⁺¹
 end
+
+#####
+##### Checkpointing
+#####
+
+import Oceananigans: prognostic_state, restore_prognostic_state!
+
+radiation_arrays(radiation::ObliqueRadiation) =
+    (; φᵇ = radiation.φᵇ, φ₁ = radiation.φ₁, φ₁ˡ = radiation.φ₁ˡ,
+       previous_boundary = radiation.previous_boundary, previous_interior = radiation.previous_interior)

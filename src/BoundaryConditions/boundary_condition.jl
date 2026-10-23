@@ -265,3 +265,23 @@ validate_boundary_condition_architecture(::Array, ::CPU, bc, side) = nothing
 
 validate_boundary_condition_architecture(::Array, ::GPU, bc, side) =
     throw(ArgumentError("$side $bc must use `CuArray` rather than `Array` on GPU architectures!"))
+
+#####
+##### Checkpointing
+#####
+
+import Oceananigans: prognostic_state, restore_prognostic_state!
+
+# A boundary condition's own state (if any) lives on its classification (`Value`/`NormalFlow`, whose
+# `scheme` may be a stateful open boundary scheme); `condition` is the user's prescribed exterior value
+# or function, reconstructed by the script that builds the model, not by the checkpointer.
+prognostic_state(bc::BoundaryCondition) = prognostic_state(bc.classification)
+restore_prognostic_state!(bc::BoundaryCondition, from) = restore_prognostic_state!(bc.classification, from)
+restore_prognostic_state!(::BoundaryCondition, ::Nothing) = nothing
+
+# Most classifications (Flux, Gradient, Periodic, Mixed, and a bare Value/NormalFlow with no scheme
+# or a stateless one) have nothing to checkpoint. Classifications built with a stateful open boundary
+# scheme (see open_boundary_schemes/) override this once that scheme type is defined.
+prognostic_state(::AbstractBoundaryConditionClassification) = nothing
+restore_prognostic_state!(::AbstractBoundaryConditionClassification, from) = nothing
+restore_prognostic_state!(::AbstractBoundaryConditionClassification, ::Nothing) = nothing

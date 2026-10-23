@@ -2,6 +2,8 @@
 ##### NormalRadiation (based on Orlanski 1976) open boundary scheme
 #####
 
+import Oceananigans: prognostic_state, restore_prognostic_state!
+
 abstract type AbstractRadiationScheme{FT} end
 
 """
@@ -411,3 +413,29 @@ end
     radiate_top_halo!(grid.Nz+1, i, j, grid, c, bc, @inbounds(model_fields.w[i, j, radiation_velocity_index(bc, grid.Nz+1, grid.Nz)]), loc, clock, model_fields)
 @inline _fill_bottom_halo!(i, j, grid, c, bc::RVBC, loc::AAC, clock, model_fields) =
     radiate_bottom_halo!(0, i, j, grid, c, bc, @inbounds(model_fields.w[i, j, radiation_velocity_index(bc, 1, 2)]), loc, clock, model_fields)
+
+#####
+##### Checkpointing
+#####
+
+# A classification built with a stateful open boundary scheme delegates to it; anything else
+# (a bare Value/NormalFlow, or one built with a stateless scheme like PerturbationAdvection) falls
+# back to `prognostic_state(::AbstractBoundaryConditionClassification) = nothing` (boundary_condition.jl).
+const RadiatingClassification = Union{Value{<:AbstractRadiationScheme}, NormalFlow{<:AbstractRadiationScheme}}
+
+prognostic_state(classification::RadiatingClassification) = prognostic_state(classification.scheme)
+restore_prognostic_state!(classification::RadiatingClassification, from) = restore_prognostic_state!(classification.scheme, from)
+
+# The arrays a radiation scheme carries between time steps (a new scheme type just needs its own
+# `radiation_arrays`, and checkpointing follows automatically). `on_architecture(CPU(), ·)` matches
+# `prognostic_state(::Field)`, which always checkpoints host-side data.
+radiation_arrays(radiation::NormalRadiation) = (; φᵇ = radiation.φᵇ, φ₁ = radiation.φ₁, φ₁ˡ = radiation.φ₁ˡ)
+
+prognostic_state(radiation::AbstractRadiationScheme) = map(a -> on_architecture(CPU(), a), radiation_arrays(radiation))
+
+function restore_prognostic_state!(radiation::AbstractRadiationScheme, from)
+    foreach(copyto!, radiation_arrays(radiation), from)
+    return radiation
+end
+
+restore_prognostic_state!(::AbstractRadiationScheme, ::Nothing) = nothing

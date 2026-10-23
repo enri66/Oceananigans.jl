@@ -166,3 +166,11 @@ end
     closed = immersed_peripheral_node(i, j, 1, grid, ℓx, ℓy, Center())
     return reservoir_halo!((i, j, 0), (i, j, 1), i, j, grid, c, bc, uₙ, uₙ <= 0, closed, clock, model_fields)
 end
+
+#####
+##### Checkpointing
+#####
+
+import Oceananigans: prognostic_state, restore_prognostic_state!
+
+radiation_arrays(reservoir::TracerReservoir) = (; cʳ = reservoir.cʳ, cʳˡ = reservoir.cʳˡ)

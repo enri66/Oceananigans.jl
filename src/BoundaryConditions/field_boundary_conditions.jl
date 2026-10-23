@@ -372,3 +372,26 @@ default_prognostic_bc(grid::LatitudeLongitudeGrid{<:Any, <:Any, Flat}, ::Val{:no
 default_prognostic_bc(grid::LatitudeLongitudeGrid{<:Any, <:Any, Flat}, ::Val{:south}, loc, default) = default
  default_auxiliary_bc(grid::LatitudeLongitudeGrid{<:Any, <:Any, Flat}, ::Val{:north}, loc) = nothing
  default_auxiliary_bc(grid::LatitudeLongitudeGrid{<:Any, <:Any, Flat}, ::Val{:south}, loc) = nothing
+
+#####
+##### Checkpointing
+#####
+
+import Oceananigans: prognostic_state, restore_prognostic_state!
+
+# Delegate to the generic NamedTuple method (checkpointer.jl), so each side's own
+# prognostic_state/restore_prognostic_state! composes automatically. Most sides have nothing to
+# checkpoint (see boundary_condition.jl), so this is typically a NamedTuple of `nothing`s.
+function prognostic_state(bcs::FieldBoundaryConditions)
+    return prognostic_state((west = bcs.west, east = bcs.east, south = bcs.south,
+                              north = bcs.north, bottom = bcs.bottom, top = bcs.top))
+end
+
+function restore_prognostic_state!(bcs::FieldBoundaryConditions, from)
+    for side in keys(from)
+        restore_prognostic_state!(getproperty(bcs, side), from[side])
+    end
+    return bcs
+end
+
+restore_prognostic_state!(::FieldBoundaryConditions, ::Nothing) = nothing
