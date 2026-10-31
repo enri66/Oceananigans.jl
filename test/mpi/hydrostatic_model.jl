@@ -266,6 +266,9 @@ function catke_convection_test(grid)
     return model
 end
 
+@inline u_drag_coefficient(i, j, grid, clock, fields, μ) = @inbounds - μ * sqrt(fields.u[i, j, 1]^2 + ℑxyᶠᶜᵃ(i, j, 1, grid, fields.v)^2)
+@inline v_drag_coefficient(i, j, grid, clock, fields, μ) = @inbounds - μ * sqrt(fields.v[i, j, 1]^2 + ℑxyᶜᶠᵃ(i, j, 1, grid, fields.u)^2)
+
 function implicit_drag_test(grid, timestepper)
     u_bcs = FieldBoundaryConditions(bottom = IMEXFluxBoundaryCondition(0, u_drag_coefficient; discrete_form = true, parameters = 0.1))
     v_bcs = FieldBoundaryConditions(bottom = IMEXFluxBoundaryCondition(0, v_drag_coefficient; discrete_form = true, parameters = 0.1))
