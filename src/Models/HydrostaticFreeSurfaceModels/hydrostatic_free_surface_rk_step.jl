@@ -1,5 +1,6 @@
 using Oceananigans.Advection: update_bounds_preserving_limiters!
 using Oceananigans.TurbulenceClosures: implicit_step!
+using Oceananigans.BoundaryConditions: needs_implicit_solver
 using Oceananigans.ImmersedBoundaries: peripheral_node, MutableGridOfSomeKind
 
 import Oceananigans.TimeSteppers: rk_substep!, cache_current_fields!
@@ -162,11 +163,20 @@ function rk_substep_velocities!(velocities, model, Δt)
 
     ηⁿ = get(model.timestepper.Ψ⁻, :η, nothing)
     add_barotropic_acceleration!(velocities, model.grid, model.free_surface, ηⁿ, Δt)
+    fill_halos_read_by_implicit_step!(velocities.v, velocities)
     implicit_substep_velocity!(model, Δt, Val(:u))
+    fill_halos_read_by_implicit_step!(velocities.u, velocities)
     implicit_substep_velocity!(model, Δt, Val(:v))
     add_barotropic_acceleration!(velocities, model.grid, model.free_surface, ηⁿ, -Δt)
     step_boundary_conditions!(velocities, model.clock, fields(model), Δt)
 
+    return nothing
+end
+
+# An implicit boundary coefficient of one velocity component can read the other component in the halo
+function fill_halos_read_by_implicit_step!(velocity, velocities)
+    needs_implicit_solver(velocities.u.boundary_conditions) | needs_implicit_solver(velocities.v.boundary_conditions) &&
+        fill_halo_regions!(velocity; only_connected_halos = true)
     return nothing
 end
 
